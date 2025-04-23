@@ -65,4 +65,8 @@ type IServer interface {
 	OnDisconnect() func(conn IConnection)
 	// ProtocolCoder 获取协议编码器
 	ProtocolCoder() IProtocolCoder
+	// HeartbeatFunc 获取心跳回调
+	HeartbeatFunc() func(conn IConnection)
+	// SetHeartbeatFunc 设置心跳回调
+	SetHeartbeatFunc(fn func(conn IConnection))
 }

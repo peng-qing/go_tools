@@ -28,6 +28,7 @@ type TLVServer struct {
 	ctxCancel     context.CancelFunc             // 上下文取消函数
 	onConnect     func(conn network.IConnection) // 连接回调
 	onDisconnect  func(conn network.IConnection) // 断开连接回调
+	heartbeatFunc func(conn network.IConnection) // 心跳函数
 	timerM        *timer.TimerManager            // 定时器管理器
 	ticker        *time.Ticker                   // 定时器
 	upgrader      *websocket.Upgrader            // websocket升级器
@@ -106,6 +107,14 @@ func (tlv *TLVServer) ProtocolCoder() network.IProtocolCoder {
 	return tlv.protocolCoder
 }
 
+func (tlv *TLVServer) HeartbeatFunc() func(conn network.IConnection) {
+	return tlv.heartbeatFunc
+}
+
+func (tlv *TLVServer) SetHeartbeatFunc(fn func(conn network.IConnection)) {
+	tlv.heartbeatFunc = fn
+}
+
 // Run 服务器主循环
 func (tlv *TLVServer) Run() {
 	slog.Info("[TLVServer] Run", "serverID", tlv.serverID, "conf", tlv.srvConf)
@@ -114,7 +123,7 @@ func (tlv *TLVServer) Run() {
 		defer tlv.waitGroup.Done()
 		defer func() {
 			if err := recover(); err != nil {
-				slog.Error("[TLVServer] Run panic, err:%v, stack:%s", err, debug.Stack())
+				slog.Error("[TLVServer] Run panic", "err", err, "stack", debug.Stack())
 			}
 		}()
 		// 服务主循环
@@ -130,7 +139,7 @@ func (tlv *TLVServer) Loop() {
 		select {
 		case <-tlv.ctx.Done():
 			// 退出
-			slog.Info("[TLVServer] Loop exit....")
+			slog.Info("[TLVServer] Loop exit....", "ServerID", tlv.serverID)
 			return
 		case now := <-tlv.ticker.C:
 			// 执行定时器
@@ -141,7 +150,8 @@ func (tlv *TLVServer) Loop() {
 
 // ListenConn 监听连接
 func (tlv *TLVServer) ListenConn() {
-	slog.Info("[TLVServer] ListenConn", "ServerID", tlv.serverID, "Mode", tlv.srvConf.Mode, "IP", tlv.srvConf.IP, "Port", tlv.srvConf.Port, "WsPort", tlv.srvConf.WsPort)
+	slog.Info("[TLVServer] ListenConn", "ServerID", tlv.serverID, "Mode", tlv.srvConf.Mode,
+		"IP", tlv.srvConf.IP, "Port", tlv.srvConf.Port, "WsPort", tlv.srvConf.WsPort)
 	switch tlv.srvConf.Mode {
 	case network.Tcp:
 		go tlv.ListenTCPConn()
@@ -158,7 +168,8 @@ func (tlv *TLVServer) ListenWebsocketConn() {
 	tlv.waitGroup.Add(1)
 	defer tlv.waitGroup.Done()
 
-	slog.Info("[TLVServer] ListenWebsocketConn", "ServerID", tlv.serverID, "IP", tlv.srvConf.IP, "WsPort", tlv.srvConf.WsPort, "WsPath", tlv.srvConf.WsPath)
+	slog.Info("[TLVServer] ListenWebsocketConn", "ServerID", tlv.serverID, "IP", tlv.srvConf.IP,
+		"WsPort", tlv.srvConf.WsPort, "WsPath", tlv.srvConf.WsPath)
 	http.HandleFunc(tlv.srvConf.WsPath, func(w http.ResponseWriter, r *http.Request) {
 		// 检查超过最大连接
 		if tlv.connM.Count() >= tlv.srvConf.MaxConn {
@@ -170,7 +181,7 @@ func (tlv *TLVServer) ListenWebsocketConn() {
 		// 升级成 websocket 连接
 		conn, err := tlv.upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			slog.Error("[TLVServer] ListenWebsocketConn upgrade websocket error", "err", err)
+			slog.Error("[TLVServer] ListenWebsocketConn upgrade websocket error", "ServerID", tlv.serverID, "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			network.AcceptDelay.Delay()
 			return
@@ -189,31 +200,31 @@ func (tlv *TLVServer) ListenTCPConn() {
 	slog.Info("[TLVServer] ListenTCPConn", "ServerID", tlv.serverID, "IP", tlv.srvConf.IP, "Port", tlv.srvConf.Port)
 	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", tlv.srvConf.IP, tlv.srvConf.Port))
 	if err != nil {
-		slog.Error("[TLVServer] ListenTCPConn resolve tcp addr error", "err", err)
+		slog.Error("[TLVServer] ListenTCPConn resolve tcp addr error", "ServerID", tlv.serverID, "err", err)
 		panic(err)
 	}
 	tcpListener, err := net.ListenTCP("tcp", addr)
 	if err != nil {
-		slog.Error("[TLVServer] ListenTCPConn listen tcp error", "err", err)
+		slog.Error("[TLVServer] ListenTCPConn listen tcp error", "ServerID", tlv.serverID, "err", err)
 		panic(err)
 	}
 	for {
 		select {
 		case <-tlv.ctx.Done():
 			// 退出
-			if err := tcpListener.Close(); err != nil {
-				slog.Error("[TLVServer] ListenTCPConn close listener error", "err", err)
+			if err = tcpListener.Close(); err != nil {
+				slog.Error("[TLVServer] ListenTCPConn close listener error", "ServerID", tlv.serverID, "err", err)
 			}
 			return
 		default:
 			if tlv.connM.Count() >= tlv.srvConf.MaxConn {
-				slog.Info("[TLVServer] session count out of limit")
+				slog.Info("[TLVServer] session count out of limit", "ServerID", tlv.serverID, "CurCount", tlv.connM.Count())
 				network.AcceptDelay.Delay()
 				continue
 			}
 			tcpConn, err := tcpListener.Accept()
 			if err != nil {
-				slog.Error("[TLVServer] ListenTCPConn accept tcp error", "err", err)
+				slog.Error("[TLVServer] ListenTCPConn accept tcp error", "ServerID", tlv.serverID, "err", err)
 				continue
 			}
 			network.AcceptDelay.Reset()
@@ -221,7 +232,7 @@ func (tlv *TLVServer) ListenTCPConn() {
 			dealConn := newTLVServerConnection(tlv, tcpConn, cID, time.Duration(tlv.srvConf.MaxHeartbeat),
 				WithTcpConnReadTimeout(tlv.srvConf.ReadTimeout), WithTcpConnWriteTimeout(tlv.srvConf.WriteTimeout))
 			// TODO 注册到连接管理器
-			dealConn.Start()
+			go dealConn.Start()
 		}
 	}
 }

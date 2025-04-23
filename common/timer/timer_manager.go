@@ -38,7 +38,7 @@ func NewTimerManager(size int) *TimerManager {
 // @return 定时器ID
 func (tm *TimerManager) AddTimer(timeOuter TimeOuter, end int64, interval int64) int64 {
 	if cap(tm.tq) <= len(tm.tq) {
-		slog.Warn("[TimerManager] AddTimer timer is full, timerOuter:%+v, end:%d, interval:%d", timeOuter, end, interval)
+		slog.Warn("[TimerManager] AddTimer timer is full", "timerOuter", timeOuter, "end", end, "interval", interval)
 		return 0
 	}
 	id := atomic.AddInt64(&tm.id, 1)
@@ -70,7 +70,7 @@ func (tm *TimerManager) RemoveTimer(timerId int64) {
 func (tm *TimerManager) Run(nowTm int64, limit int) (uint32, uint32) {
 	defer func() {
 		if err := recover(); err != nil {
-			slog.Error("[TimerManager] Run panic, err:%v, stack:%s", err, debug.Stack())
+			slog.Error("[TimerManager] Run panic", "err", err, "stack", debug.Stack())
 		}
 	}()
 

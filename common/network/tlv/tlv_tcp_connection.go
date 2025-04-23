@@ -23,11 +23,11 @@ type TLVTCPConnection struct {
 	onDisconnect     func(conn network.IConnection) // 连接断开回调
 	protocolCoder    network.IProtocolCoder         // 协议编解码器
 	heartbeat        time.Duration                  // 心跳间隔
+	heartbeatFunc    func(conn network.IConnection) // 自定义心跳函数
 	readTimeout      time.Duration                  // 读超时时间
 	writeTimeout     time.Duration                  // 写超时时间
 	lastActivityTime time.Time                      // 最后活动时间
 	lock             sync.Mutex                     // 锁
-	waitGroup        sync.WaitGroup                 // 等待组
 }
 
 // Start 启动连接
@@ -44,8 +44,6 @@ func (tlv *TLVTCPConnection) Close() error {
 		tlv.ctxCancel()
 	}
 
-	// 等待所有子协程退出
-	tlv.waitGroup.Wait()
 	return nil
 }
 
@@ -94,6 +92,7 @@ func newTLVServerConnection(server network.IServer, conn net.Conn, connID uint64
 		heartbeat:     heartbeat,
 		ctx:           ctx,
 		ctxCancel:     ctxCancel,
+		heartbeatFunc: server.HeartbeatFunc(),
 		onConnect:     server.OnConnect(),
 		onDisconnect:  server.OnDisconnect(),
 		protocolCoder: server.ProtocolCoder(),
@@ -128,11 +127,82 @@ func (tlv *TLVTCPConnection) callOnConnect() {
 
 // Run 连接运行
 func (tlv *TLVTCPConnection) Run() {
-	defer func() {
-		if err := recover(); err != nil {
-			slog.Error("[TLVTCPConnection] Run panic", "connID", tlv.GetConnectionID(), "Error", err, "Stack", debug.Stack())
-		}
-	}()
+	waitGroup := sync.WaitGroup{} // 等待组
 	// 启动读写循环
-	//tlv.waitGroup.Add(1)
+	waitGroup.Add(1)
+	go func() {
+		defer waitGroup.Done()
+		defer func() {
+			if err := recover(); err != nil {
+				slog.Error("[TLVTCPConnection] Run read loop panic", "err", err, "stack", debug.Stack())
+			}
+		}()
+		tlv.readLoop()
+	}()
+
+	waitGroup.Add(1)
+	go func() {
+		defer waitGroup.Done()
+		defer func() {
+			if err := recover(); err != nil {
+				slog.Error("[TLVTCPConnection] Run write loop panic", "err", err, "stack", debug.Stack())
+			}
+		}()
+		tlv.writeLoop()
+	}()
+
+	waitGroup.Add(1)
+	go func() {
+		defer waitGroup.Done()
+		defer func() {
+			if err := recover(); err != nil {
+				slog.Error("[TLVTCPConnection] Run heartbeat loop panic", "err", err, "stack", debug.Stack())
+			}
+		}()
+		tlv.keepalive()
+	}()
+
+	waitGroup.Wait()
+}
+
+// readLoop 读循环
+func (tlv *TLVTCPConnection) readLoop() {
+	//	TODO 实现 read loop
+}
+
+// writeLoop 写循环
+func (tlv *TLVTCPConnection) writeLoop() {
+	// TODO 实现 write loop
+}
+
+// keepalive 心跳循环
+func (tlv *TLVTCPConnection) keepalive() {
+	ticker := time.NewTicker(tlv.heartbeat)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-tlv.ctx.Done():
+			slog.Info("[TLVTCPConnection] keepalive conn close", "connID", tlv.connID)
+			return
+		case <-ticker.C:
+			if tlv.isClosed() {
+				slog.Info("[TLVTCPConnection] keepalive conn is closed", "connID", tlv.connID)
+				return
+			}
+			if !tlv.IsAlive() {
+				slog.Warn("[TLVTCPConnection] keepalive not alive", "connID", tlv.connID)
+				// close conn
+				if err := tlv.Close(); err != nil {
+					slog.Error("[TLVTCPConnection] keepalive close conn error", "connID", tlv.connID, "err", err)
+				}
+				return
+			}
+			// 发送心跳包
+			if tlv.heartbeatFunc != nil {
+				tlv.heartbeatFunc(tlv)
+			}
+			tlv.updateLastActivityTime()
+		}
+	}
 }
