@@ -16,6 +16,7 @@ import (
 type TLVTCPConnection struct {
 	connID           uint64                         // 连接ID
 	rwc              net.Conn                       // 原始连接
+	msgSendChan      chan []byte                    // 等待发送消息队列
 	side             network.NetSide                // 连接类型
 	ctx              context.Context                // 上下文
 	ctxCancel        context.CancelFunc             // 上下文取消
@@ -172,7 +173,30 @@ func (tlv *TLVTCPConnection) readLoop() {
 
 // writeLoop 写循环
 func (tlv *TLVTCPConnection) writeLoop() {
-	// TODO 实现 write loop
+	for {
+		select {
+		case <-tlv.ctx.Done():
+			slog.Info("[TLVTCPConnection] write loop conn close", "connID", tlv.connID)
+			close(tlv.msgSendChan)
+			return
+		case msg := <-tlv.msgSendChan:
+			if tlv.isClosed() {
+				slog.Info("[TLVTCPConnection] write loop conn is closed", "connID", tlv.connID)
+				return
+			}
+			if tlv.writeTimeout > 0 {
+				_ = tlv.rwc.SetWriteDeadline(time.Now().Add(tlv.writeTimeout))
+			}
+			if _, err := tlv.rwc.Write(msg); err != nil {
+				slog.Error("[TLVTCPConnection] write loop write error", "connID", tlv.connID, "err", err)
+			}
+			if tlv.writeTimeout > 0 {
+				_ = tlv.rwc.SetWriteDeadline(time.Time{})
+			}
+			// 写的时候是否需要更新...
+			//tlv.updateLastActivityTime()
+		}
+	}
 }
 
 // keepalive 心跳循环
