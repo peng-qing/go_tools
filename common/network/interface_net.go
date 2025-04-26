@@ -1,6 +1,9 @@
 package network
 
-import "net"
+import (
+	"iter"
+	"net"
+)
 
 // IProtocolCoder 网络协议编码器
 type IProtocolCoder interface {
@@ -47,8 +50,21 @@ type IConnection interface {
 
 // IConnectionManager 连接管理器
 type IConnectionManager interface {
+	// Add 添加连接
+	Add(conn IConnection)
+	// Remove 移除连接
+	Remove(conn IConnection)
+	// RemoveByConnectionID 根据连接ID移除连接
+	RemoveByConnectionID(connID uint64)
+	// Get 获取连接
+	Get(connID uint64) IConnection
 	// Count 连接数量
 	Count() int
+	// GetAllConnID 获取所有连接
+	GetAllConnID() []uint64
+	Range(fn func(connId uint64, conn IConnection) error) error
+	// Iter 获取连接迭代器
+	Iter() iter.Seq[IConnection]
 }
 
 type IServer interface {

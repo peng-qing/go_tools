@@ -39,12 +39,13 @@ type TLVServer struct {
 func NewTLVServer(srvConf *TLVServerConfig, opts ...options.Option[TLVServer]) *TLVServer {
 	ctx, ctxCancel := context.WithCancel(context.Background())
 	protocolCoder := NewTLVProtocolCoder(srvConf.UsedLittleEndian)
-
+	connM := NewTLVConnectionManager()
 	instance := &TLVServer{
 		serverID:      srvConf.ServerID,
 		cIDGenerator:  0,
 		srvConf:       srvConf,
 		protocolCoder: protocolCoder,
+		connM:         connM,
 		ctx:           ctx,
 		ctxCancel:     ctxCancel,
 		timerM:        timer.NewTimerManager(srvConf.TimerQueueSize),
