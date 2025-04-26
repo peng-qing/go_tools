@@ -98,6 +98,7 @@ func newTLVServerConnection(connID uint64, conn net.Conn, server network.IServer
 		onConnect:     server.OnConnect(),
 		onDisconnect:  server.OnDisconnect(),
 		protocolCoder: server.ProtocolCoder(),
+		dispatchFunc:  server.GetDispatchMsg(),
 	}
 
 	return instance
@@ -217,12 +218,12 @@ func (tlv *TLVTCPConnection) readLoop() {
 					if packet != nil && totalLen > 0 {
 						// 从缓冲区移除已处理数据
 						tlv.buffer.Next(int(totalLen))
-						// TODO 处理完整数据包
-
+						// 处理完整数据包
+						// packet -> dispatcher -> handler -> message -> logic
+						tlv.dispatchFunc(packet)
 					}
 				}
 			}
-
 		}
 	}
 }

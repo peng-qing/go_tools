@@ -115,6 +115,10 @@ func (tlv *TLVServer) SetHeartbeatFunc(fn func(conn network.IConnection)) {
 	tlv.heartbeatFunc = fn
 }
 
+func (tlv *TLVServer) GetDispatchMsg() func(packet network.IPacket) {
+	return nil
+}
+
 // Run 服务器主循环
 func (tlv *TLVServer) Run() {
 	slog.Info("[TLVServer] Run", "serverID", tlv.serverID, "conf", tlv.srvConf)
