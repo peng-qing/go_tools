@@ -46,8 +46,8 @@ func (tlv *TLVProtocolCoder) Decode(buffer []byte) (network.IPacket, uint32, err
 		// 数据不足以解析头部
 		return nil, 0, nil
 	}
-	typeVal := tlv.byteOrder.Uint16(buffer[0:2]) // 获取数据包类型 T
-	length := tlv.byteOrder.Uint32(buffer[2:6])  // 获取数据长度 L
+	length := tlv.byteOrder.Uint32(buffer[0:4])  // 获取数据长度 L
+	typeVal := tlv.byteOrder.Uint16(buffer[4:6]) // 获取数据包类型 T
 	totalLen := length + uint32(tlv.headerSize)  // 计算总长度
 	if len(buffer) < int(totalLen) {
 		// 数据不够一整个包
@@ -73,13 +73,12 @@ func (tlv *TLVProtocolCoder) Encode(data network.IPacket) ([]byte, error) {
 	length := len(dataVal)
 	totalLen := length + tlv.headerSize
 	buffer := bytes.NewBuffer(make([]byte, 0, totalLen))
-
-	// T
-	if err := binary.Write(buffer, tlv.byteOrder, tlvHeader.Type); err != nil {
-		return nil, err
-	}
 	// L
 	if err := binary.Write(buffer, tlv.byteOrder, tlvHeader.Length); err != nil {
+		return nil, err
+	}
+	// T
+	if err := binary.Write(buffer, tlv.byteOrder, tlvHeader.Type); err != nil {
 		return nil, err
 	}
 	// V

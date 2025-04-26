@@ -70,4 +70,6 @@ type IServer interface {
 	HeartbeatFunc() func(conn IConnection)
 	// SetHeartbeatFunc 设置心跳回调
 	SetHeartbeatFunc(fn func(conn IConnection))
+	// GetDispatchMsg 获取消息分发
+	GetDispatchMsg() func(packet IPacket)
 }
