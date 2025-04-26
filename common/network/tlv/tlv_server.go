@@ -53,7 +53,7 @@ func NewTLVServer(srvConf *TLVServerConfig, opts ...options.Option[TLVServer]) *
 			CheckOrigin: func(r *http.Request) bool {
 				return true
 			},
-			ReadBufferSize: srvConf.MaxIOReadSize,
+			ReadBufferSize: srvConf.Connection.MaxIOReadSize,
 		},
 		waitGroup: sync.WaitGroup{},
 	}
@@ -229,10 +229,9 @@ func (tlv *TLVServer) ListenTCPConn() {
 			}
 			network.AcceptDelay.Reset()
 			cID := atomic.AddUint64(&tlv.cIDGenerator, 1)
-			dealConn := newTLVServerConnection(tlv, tcpConn, cID, time.Duration(tlv.srvConf.MaxHeartbeat),
-				WithTcpConnReadTimeout(tlv.srvConf.ReadTimeout), WithTcpConnWriteTimeout(tlv.srvConf.WriteTimeout))
+			dealConn := newTLVServerConnection(cID, tcpConn, tlv, tlv.srvConf.Connection)
 			// TODO 注册到连接管理器
-			go dealConn.Start()
+			dealConn.Start()
 		}
 	}
 }

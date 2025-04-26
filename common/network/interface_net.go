@@ -4,6 +4,7 @@ import "net"
 
 // IProtocolCoder 网络协议编码器
 type IProtocolCoder interface {
+	GetHeaderSize() int
 	// Decode 解析缓冲区数据
 	// 返回解析的数据，解析的长度，可能的错误
 	Decode(buffer []byte) (IPacket, uint32, error)

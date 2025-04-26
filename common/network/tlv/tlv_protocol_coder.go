@@ -36,6 +36,10 @@ func NewTLVProtocolCoder(isLittleEndian bool) *TLVProtocolCoder {
 	return instance
 }
 
+func (tlv *TLVProtocolCoder) GetHeaderSize() int {
+	return tlv.headerSize
+}
+
 // Decode 解码TLV数据包
 func (tlv *TLVProtocolCoder) Decode(buffer []byte) (network.IPacket, uint32, error) {
 	if len(buffer) < tlv.headerSize {
@@ -47,7 +51,7 @@ func (tlv *TLVProtocolCoder) Decode(buffer []byte) (network.IPacket, uint32, err
 	totalLen := length + uint32(tlv.headerSize)  // 计算总长度
 	if len(buffer) < int(totalLen) {
 		// 数据不够一整个包
-		return nil, totalLen, nil
+		return nil, 0, nil
 	}
 	data := make([]byte, length)
 	copy(data, buffer[tlv.headerSize:totalLen])
