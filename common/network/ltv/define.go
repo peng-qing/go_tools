@@ -1,4 +1,4 @@
-package network
+package ltv
 
 const (
 	Tcp       = 1

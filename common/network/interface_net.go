@@ -62,6 +62,7 @@ type IConnectionManager interface {
 	Count() int
 	// GetAllConnID 获取所有连接
 	GetAllConnID() []uint64
+	// Range 遍历连接
 	Range(fn func(connId uint64, conn IConnection) error) error
 	// Iter 获取连接迭代器
 	Iter() iter.Seq[IConnection]
@@ -88,4 +89,6 @@ type IServer interface {
 	SetHeartbeatFunc(fn func(conn IConnection))
 	// GetDispatchMsg 获取消息分发
 	GetDispatchMsg() func(packet IPacket)
+	// SetDispatchMsg 设置消息分发
+	SetDispatchMsg(fn func(packet IPacket))
 }
