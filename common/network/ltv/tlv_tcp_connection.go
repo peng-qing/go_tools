@@ -15,22 +15,22 @@ import (
 
 // LTVTCPConnection LTV TCP连接
 type LTVTCPConnection struct {
-	connID           uint64                         // 连接ID
-	rwc              net.Conn                       // 原始连接
-	connM            network.IConnectionManager     // 连接管理
-	buffer           *bytes.Buffer                  // 缓冲区
-	msgSendChan      chan []byte                    // 等待发送消息队列
-	side             NetSide                        // 连接类型
-	ctx              context.Context                // 上下文
-	ctxCancel        context.CancelFunc             // 上下文取消
-	onConnect        func(conn network.IConnection) // 连接建立回调
-	onDisconnect     func(conn network.IConnection) // 连接断开回调
-	protocolCoder    network.IProtocolCoder         // 协议编解码器
-	heartbeatFunc    func(conn network.IConnection) // 自定义心跳函数
-	dispatchFunc     func(packet network.IPacket)   // 自定义消息分发函数
-	connConf         *LTVConnectionConfig           // 连接配置
-	lastActivityTime time.Time                      // 最后活动时间
-	lock             sync.Mutex                     // 锁
+	connID         uint64                         // 连接ID
+	rwc            net.Conn                       // 原始连接
+	connM          network.IConnectionManager     // 连接管理
+	buffer         *bytes.Buffer                  // 缓冲区
+	msgSendChan    chan []byte                    // 等待发送消息队列
+	side           NetSide                        // 连接类型
+	ctx            context.Context                // 上下文
+	ctxCancel      context.CancelFunc             // 上下文取消
+	onConnect      func(conn network.IConnection) // 连接建立回调
+	onDisconnect   func(conn network.IConnection) // 连接断开回调
+	protocolCoder  network.IProtocolCoder         // 协议编解码器
+	heartbeatFunc  func(conn network.IConnection) // 自定义心跳函数
+	dispatchFunc   func(packet network.IPacket)   // 自定义消息分发函数
+	connConf       *LTVConnectionConfig           // 连接配置
+	lastActiveTime time.Time                      // 最后活动时间
+	lock           sync.Mutex                     // 锁
 }
 
 // Start 启动连接
@@ -94,7 +94,7 @@ func (ltv *LTVTCPConnection) IsAlive() bool {
 		return false
 	}
 	// 最后一次活跃时间是否超过心跳间隔
-	return time.Now().Sub(ltv.lastActivityTime) <= time.Duration(ltv.connConf.MaxHeartbeat)*time.Millisecond
+	return time.Now().Sub(ltv.lastActiveTime) <= time.Duration(ltv.connConf.MaxHeartbeat)*time.Millisecond
 }
 
 // SendToQueue 发送消息
@@ -153,8 +153,8 @@ func (ltv *LTVTCPConnection) isClosed() bool {
 }
 
 // updateLastActivityTime 更新最后活跃时间
-func (ltv *LTVTCPConnection) updateLastActivityTime() {
-	ltv.lastActivityTime = time.Now()
+func (ltv *LTVTCPConnection) updateLastActiveTime() {
+	ltv.lastActiveTime = time.Now()
 }
 
 // callOnConnect 调用连接建立回调
@@ -167,7 +167,7 @@ func (ltv *LTVTCPConnection) callOnConnect() {
 // Run 连接运行
 func (ltv *LTVTCPConnection) Run() {
 	// 更新活跃时间
-	ltv.updateLastActivityTime()
+	ltv.updateLastActiveTime()
 	waitGroup := sync.WaitGroup{} // 等待组
 	// 启动读写循环
 	waitGroup.Add(1)
@@ -242,8 +242,8 @@ func (ltv *LTVTCPConnection) readLoop() {
 				_ = ltv.rwc.SetReadDeadline(time.Time{})
 			}
 			if n > 0 {
-				//// 成功读到对端数据 更新活跃时间
-				//ltv.updateLastActivityTime()
+				// 成功读到对端数据 更新活跃时间
+				ltv.updateLastActiveTime()
 				// 写入读取数据到缓冲区
 				ltv.buffer.Write(readBuffer[:n])
 				// 循环解包
@@ -324,7 +324,7 @@ func (ltv *LTVTCPConnection) keepalive() {
 				return
 			}
 			if !ltv.IsAlive() {
-				slog.Warn("[LTVTCPConnection] keepalive not alive", "connID", ltv.connID, "lastActivity", ltv.lastActivityTime.UnixNano())
+				slog.Warn("[LTVTCPConnection] keepalive not alive", "connID", ltv.connID, "lastActivity", ltv.lastActiveTime.UnixNano())
 				// close conn
 				if err := ltv.Close(); err != nil {
 					slog.Error("[LTVTCPConnection] keepalive close conn error", "connID", ltv.connID, "err", err)
@@ -335,7 +335,7 @@ func (ltv *LTVTCPConnection) keepalive() {
 			if ltv.heartbeatFunc != nil {
 				ltv.heartbeatFunc(ltv)
 			}
-			ltv.updateLastActivityTime()
+			//ltv.updateLastActivityTime()
 		}
 	}
 }
