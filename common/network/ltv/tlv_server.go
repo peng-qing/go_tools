@@ -85,6 +85,10 @@ func (ltv *LTVServer) Close() error {
 	return nil
 }
 
+func (ltv *LTVServer) GetConnectionManager() network.IConnectionManager {
+	return ltv.connM
+}
+
 // SetOnConnect 设置连接回调
 func (ltv *LTVServer) SetOnConnect(fn func(conn network.IConnection)) {
 	ltv.onConnect = fn
@@ -252,8 +256,6 @@ func (ltv *LTVServer) ListenTCPConn() {
 			network.AcceptDelay.Reset()
 			cID := atomic.AddUint64(&ltv.cIDGenerator, 1)
 			dealConn := newLTVServerConnection(cID, tcpConn, ltv, ltv.srvConf.Connection)
-			// 注册到连接管理器
-			ltv.connM.Add(dealConn)
 			dealConn.Start()
 		}
 	}

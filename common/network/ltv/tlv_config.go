@@ -9,7 +9,7 @@ type LTVServerConfig struct {
 	WsPath           string               `yaml:"ws_path" json:"ws_path"`                       // Websocket 路径
 	Mode             int                  `yaml:"mode" json:"mode"`                             // 监听服务 1 TCP 2 WebSocket 0 默认同时监听
 	MaxConn          int                  `yaml:"max_conn" json:"max_conn"`                     // 最大连接数
-	MaxPacketSize    uint32               `yaml:"max_packet_size" json:"max_packet_size"`       // 最大包体长度
+	MaxPacketSize    uint32               `yaml:"max_packet_size" json:"max_packet_size"`       // 最大包体长度 单位byte
 	MaxMsgQSize      uint32               `yaml:"max_msg_q_size" json:"max_msg_q_size"`         // 最大消息队列长度
 	UsedLittleEndian bool                 `yaml:"used_little_endian" json:"used_little_endian"` // UsedLittleEndian 是否使用小端模式
 	TimerQueueSize   int                  `yaml:"timer_queue_size" json:"timer_queue_size"`     // TimerQueueSize 定时器队列大小
@@ -18,8 +18,8 @@ type LTVServerConfig struct {
 }
 
 type LTVConnectionConfig struct {
-	MaxHeartbeat  int64 `yaml:"heartbeat" json:"heartbeat"`               // MaxHeartbeat 最大心跳间隔
-	ReadTimeout   int64 `yaml:"read_timeout" json:"read_timeout"`         // ReadTimeout 读取超时时间
-	WriteTimeout  int64 `yaml:"write_timeout" json:"write_timeout"`       // WriteTimeout 写入超时时间
-	MaxIOReadSize int   `yaml:"max_io_read_size" json:"max_io_read_size"` // MaxIOReadSize 一次读取的最大字节数
+	MaxHeartbeat  int64 `yaml:"heartbeat" json:"heartbeat"`               // MaxHeartbeat 最大心跳间隔 单位 毫秒
+	ReadTimeout   int64 `yaml:"read_timeout" json:"read_timeout"`         // ReadTimeout 读取超时时间 单位 毫秒
+	WriteTimeout  int64 `yaml:"write_timeout" json:"write_timeout"`       // WriteTimeout 写入超时时间 单位 毫秒
+	MaxIOReadSize int   `yaml:"max_io_read_size" json:"max_io_read_size"` // MaxIOReadSize 一次读取的最大字节数 单位byte
 }

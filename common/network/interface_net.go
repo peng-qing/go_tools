@@ -46,6 +46,8 @@ type IConnection interface {
 	LocalAddrString() string
 	// IsAlive 判断当前连接是否存活
 	IsAlive() bool
+	// SendToQueue 发送数据到队列
+	SendToQueue(data []byte) error
 }
 
 // IConnectionManager 连接管理器
@@ -91,4 +93,6 @@ type IServer interface {
 	GetDispatchMsg() func(packet IPacket)
 	// SetDispatchMsg 设置消息分发
 	SetDispatchMsg(fn func(packet IPacket))
+	// GetConnectionManager 获取连接管理器
+	GetConnectionManager() IConnectionManager
 }

@@ -17,6 +17,7 @@ import (
 type LTVTCPConnection struct {
 	connID           uint64                         // 连接ID
 	rwc              net.Conn                       // 原始连接
+	connM            network.IConnectionManager     // 连接管理
 	buffer           *bytes.Buffer                  // 缓冲区
 	msgSendChan      chan []byte                    // 等待发送消息队列
 	side             NetSide                        // 连接类型
@@ -42,9 +43,22 @@ func (ltv *LTVTCPConnection) Start() {
 
 // Close 关闭连接
 func (ltv *LTVTCPConnection) Close() error {
+	if ltv.isClosed() {
+		return errors.New("connection is closed")
+	}
 	if ltv.ctx != nil && ltv.ctxCancel != nil {
 		ltv.ctxCancel()
 	}
+	// 执行回调
+	if ltv.onDisconnect != nil {
+		ltv.onDisconnect(ltv)
+	}
+	// 关闭连接
+	if err := ltv.rwc.Close(); err != nil {
+		slog.Error("[LTVTCPConnection] close rwc conn failed", "connID", ltv.connID, "err", err)
+	}
+	// 移除连接管理
+	ltv.connM.RemoveByConnectionID(ltv.connID)
 
 	return nil
 }
@@ -80,7 +94,27 @@ func (ltv *LTVTCPConnection) IsAlive() bool {
 		return false
 	}
 	// 最后一次活跃时间是否超过心跳间隔
-	return time.Now().Sub(ltv.lastActivityTime) < time.Duration(ltv.connConf.MaxHeartbeat)
+	return time.Now().Sub(ltv.lastActivityTime) < time.Duration(ltv.connConf.MaxHeartbeat)*time.Millisecond
+}
+
+// SendToQueue 发送消息
+func (ltv *LTVTCPConnection) SendToQueue(data []byte) error {
+	//ltv.msgSendChan <- data
+	if ltv.isClosed() {
+		slog.Error("[LTVTCPConnection] SendToQueue conn is closed", "connID", ltv.connID)
+		return errors.New("connection is closed")
+	}
+	if len(data) <= 0 {
+		slog.Error("[LTVTCPConnection] SendToQueue data is empty", "connID", ltv.connID)
+		return errors.New("pack data is empty")
+	}
+
+	select {
+	case ltv.msgSendChan <- data:
+		return nil
+	case <-ltv.ctx.Done():
+		return errors.New("connection closed when send buff msg")
+	}
 }
 
 // NewLTVServerConnection 创建LTV TCP连接
@@ -94,12 +128,16 @@ func newLTVServerConnection(connID uint64, conn net.Conn, server network.IServer
 		connConf:      connConf,
 		ctx:           ctx,
 		ctxCancel:     ctxCancel,
+		connM:         server.GetConnectionManager(),
 		heartbeatFunc: server.HeartbeatFunc(),
 		onConnect:     server.OnConnect(),
 		onDisconnect:  server.OnDisconnect(),
 		protocolCoder: server.ProtocolCoder(),
 		dispatchFunc:  server.GetDispatchMsg(),
 	}
+
+	// 注册到连接管理器
+	instance.connM.Add(instance)
 
 	return instance
 }
@@ -174,8 +212,12 @@ func (ltv *LTVTCPConnection) readLoop() {
 			slog.Info("[LTVTCPConnection] read loop conn close", "connID", ltv.connID)
 			return
 		default:
+			if ltv.isClosed() {
+				slog.Info("[LTVTCPConnection] read loop conn is closed", "connID", ltv.connID)
+				return
+			}
 			if ltv.connConf.ReadTimeout > 0 {
-				ltv.rwc.SetReadDeadline(time.Now().Add(time.Duration(ltv.connConf.ReadTimeout)))
+				_ = ltv.rwc.SetReadDeadline(time.Now().Add(time.Duration(ltv.connConf.ReadTimeout) * time.Millisecond))
 			}
 			// 读取网络数据
 			n, err := ltv.rwc.Read(readBuffer)
@@ -235,6 +277,9 @@ func (ltv *LTVTCPConnection) writeLoop() {
 		case <-ltv.ctx.Done():
 			slog.Info("[LTVTCPConnection] write loop conn close", "connID", ltv.connID)
 			close(ltv.msgSendChan)
+			for data := range ltv.msgSendChan {
+				ltv.rwc.Write(data)
+			}
 			return
 		case msg := <-ltv.msgSendChan:
 			if ltv.isClosed() {
@@ -242,7 +287,7 @@ func (ltv *LTVTCPConnection) writeLoop() {
 				return
 			}
 			if ltv.connConf.WriteTimeout > 0 {
-				_ = ltv.rwc.SetWriteDeadline(time.Now().Add(time.Duration(ltv.connConf.WriteTimeout)))
+				_ = ltv.rwc.SetWriteDeadline(time.Now().Add(time.Duration(ltv.connConf.WriteTimeout) * time.Millisecond))
 			}
 			if _, err := ltv.rwc.Write(msg); err != nil {
 				slog.Error("[LTVTCPConnection] write loop write error", "connID", ltv.connID, "err", err)
@@ -261,7 +306,7 @@ func (ltv *LTVTCPConnection) writeLoop() {
 
 // keepalive 心跳循环
 func (ltv *LTVTCPConnection) keepalive() {
-	ticker := time.NewTicker(time.Duration(ltv.connConf.MaxHeartbeat))
+	ticker := time.NewTicker(time.Duration(ltv.connConf.MaxHeartbeat) * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
