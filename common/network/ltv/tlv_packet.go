@@ -19,6 +19,17 @@ type LTVPacket struct {
 	TotalLen uint32     // LTV格式包总长度
 }
 
+func NewLTVPacket(msgType uint16, data []byte) network.IPacket {
+	return &LTVPacket{
+		Header: &LTVHeader{
+			Type:   msgType,
+			Length: uint32(len(data)),
+		},
+		Data:     data,
+		TotalLen: uint32(len(data) + LTVHeaderSize),
+	}
+}
+
 // GetData 获取LTV格式包数据域
 func (l *LTVPacket) GetData() []byte {
 	return l.Data

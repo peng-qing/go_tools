@@ -94,7 +94,7 @@ func (ltv *LTVTCPConnection) IsAlive() bool {
 		return false
 	}
 	// 最后一次活跃时间是否超过心跳间隔
-	return time.Now().Sub(ltv.lastActivityTime) < time.Duration(ltv.connConf.MaxHeartbeat)*time.Millisecond
+	return time.Now().Sub(ltv.lastActivityTime) <= time.Duration(ltv.connConf.MaxHeartbeat)*time.Millisecond
 }
 
 // SendToQueue 发送消息
@@ -126,6 +126,8 @@ func newLTVServerConnection(connID uint64, conn net.Conn, server network.IServer
 		rwc:           conn,
 		side:          NodeSide_Server,
 		connConf:      connConf,
+		msgSendChan:   make(chan []byte, connConf.SendQueueSize),
+		buffer:        bytes.NewBuffer(make([]byte, 0)),
 		ctx:           ctx,
 		ctxCancel:     ctxCancel,
 		connM:         server.GetConnectionManager(),
@@ -164,6 +166,8 @@ func (ltv *LTVTCPConnection) callOnConnect() {
 
 // Run 连接运行
 func (ltv *LTVTCPConnection) Run() {
+	// 更新活跃时间
+	ltv.updateLastActivityTime()
 	waitGroup := sync.WaitGroup{} // 等待组
 	// 启动读写循环
 	waitGroup.Add(1)
@@ -238,8 +242,8 @@ func (ltv *LTVTCPConnection) readLoop() {
 				_ = ltv.rwc.SetReadDeadline(time.Time{})
 			}
 			if n > 0 {
-				// 成功读到对端数据 更新活跃时间
-				ltv.updateLastActivityTime()
+				//// 成功读到对端数据 更新活跃时间
+				//ltv.updateLastActivityTime()
 				// 写入读取数据到缓冲区
 				ltv.buffer.Write(readBuffer[:n])
 				// 循环解包
@@ -306,7 +310,7 @@ func (ltv *LTVTCPConnection) writeLoop() {
 
 // keepalive 心跳循环
 func (ltv *LTVTCPConnection) keepalive() {
-	ticker := time.NewTicker(time.Duration(ltv.connConf.MaxHeartbeat) * time.Millisecond)
+	ticker := time.NewTicker(time.Duration(ltv.connConf.Heartbeat) * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
@@ -320,7 +324,7 @@ func (ltv *LTVTCPConnection) keepalive() {
 				return
 			}
 			if !ltv.IsAlive() {
-				slog.Warn("[LTVTCPConnection] keepalive not alive", "connID", ltv.connID)
+				slog.Warn("[LTVTCPConnection] keepalive not alive", "connID", ltv.connID, "lastActivity", ltv.lastActivityTime.UnixNano())
 				// close conn
 				if err := ltv.Close(); err != nil {
 					slog.Error("[LTVTCPConnection] keepalive close conn error", "connID", ltv.connID, "err", err)

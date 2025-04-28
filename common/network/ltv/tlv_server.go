@@ -130,7 +130,7 @@ func (ltv *LTVServer) SetDispatchMsg(fn func(packet network.IPacket)) {
 }
 
 func (ltv *LTVServer) GetDispatchMsg() func(packet network.IPacket) {
-	return nil
+	return ltv.dispatchFunc
 }
 
 // Run 服务器主循环
