@@ -8,7 +8,7 @@ var (
 )
 
 type LTVHeader struct {
-	Type   uint16 // LTV格式包类型
+	Type   uint32 // LTV格式包类型
 	Length uint32 // LTV格式包长度
 }
 
@@ -19,7 +19,7 @@ type LTVPacket struct {
 	TotalLen uint32     // LTV格式包总长度
 }
 
-func NewLTVPacket(msgType uint16, data []byte) network.IPacket {
+func NewLTVPacket(msgType uint32, data []byte) network.IPacket {
 	return &LTVPacket{
 		Header: &LTVHeader{
 			Type:   msgType,

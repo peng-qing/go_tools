@@ -9,8 +9,8 @@ import (
 
 const (
 	// LTVHeaderSize ltv格式包头大小
-	// |  length(4byte)  |  type(2byte)  |
-	LTVHeaderSize = 6
+	// |  length(4byte)  |  type(4byte)  |
+	LTVHeaderSize = 8
 )
 
 var (
@@ -47,7 +47,7 @@ func (ltv *LTVProtocolCoder) Decode(buffer []byte) (network.IPacket, uint32, err
 		return nil, 0, nil
 	}
 	length := ltv.byteOrder.Uint32(buffer[0:4])  // 获取数据长度 L
-	typeVal := ltv.byteOrder.Uint16(buffer[4:6]) // 获取数据包类型 T
+	typeVal := ltv.byteOrder.Uint32(buffer[4:8]) // 获取数据包类型 T
 	totalLen := length + uint32(ltv.headerSize)  // 计算总长度
 	if len(buffer) < int(totalLen) {
 		// 数据不够一整个包

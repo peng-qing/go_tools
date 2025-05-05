@@ -96,3 +96,24 @@ type IServer interface {
 	// GetConnectionManager 获取连接管理器
 	GetConnectionManager() IConnectionManager
 }
+
+// IExecutor 执行器接口 暂时定义为一个空接口
+type IExecutor interface {
+}
+
+// IHandler 命令接口
+type IHandler interface {
+	Execute(executor IExecutor, packet IPacket)
+}
+
+// IDispatcher 消息分发器
+type IDispatcher interface {
+	// Register 注册消息
+	Register(id uint32, handler IHandler)
+	// DispatchMsg 分发消息
+	DispatchMsg(packet IPacket)
+	// Pause 暂停消息
+	Pause(id uint32)
+	// Resume 恢复消息
+	Resume(id uint32)
+}
