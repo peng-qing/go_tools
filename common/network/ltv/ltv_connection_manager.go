@@ -2,10 +2,11 @@ package ltv
 
 import (
 	"errors"
-	"go_tools/common/network"
 	"iter"
 	"sync"
 	"sync/atomic"
+
+	"go_tools/common/network"
 )
 
 type LTVConnectionManager struct {

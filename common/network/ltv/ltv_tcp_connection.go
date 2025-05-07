@@ -117,7 +117,7 @@ func (ltv *LTVTCPConnection) SendToQueue(data []byte) error {
 	}
 }
 
-// NewLTVServerConnection 创建LTV TCP连接
+// NewLTVServerConnection 创建LTV TCP连接 服务器
 func newLTVServerConnection(connID uint64, conn net.Conn, server network.IServer, connConf *LTVConnectionConfig) *LTVTCPConnection {
 	ctx, ctxCancel := context.WithCancel(context.Background())
 
@@ -136,10 +136,34 @@ func newLTVServerConnection(connID uint64, conn net.Conn, server network.IServer
 		onDisconnect:  server.OnDisconnect(),
 		protocolCoder: server.ProtocolCoder(),
 		dispatchFunc:  server.GetDispatchMsg(),
+		lock:          sync.Mutex{},
 	}
 
 	// 注册到连接管理器
 	instance.connM.Add(instance)
+
+	return instance
+}
+
+// NewLTVClientConnection 创建LTV TCP连接 客户端
+func newLTVClientConnection(client network.IClient, conn net.Conn, connConf *LTVConnectionConfig) *LTVTCPConnection {
+	ctx, ctxCancel := context.WithCancel(context.Background())
+	instance := &LTVTCPConnection{
+		connID:        0, // 客户端忽略
+		rwc:           conn,
+		buffer:        bytes.NewBuffer(make([]byte, 0)),
+		msgSendChan:   make(chan []byte, connConf.SendQueueSize),
+		side:          NodeSide_Client,
+		ctx:           ctx,
+		ctxCancel:     ctxCancel,
+		onConnect:     client.OnConnect(),
+		onDisconnect:  client.OnDisconnect(),
+		protocolCoder: client.ProtocolCoder(),
+		heartbeatFunc: client.HeartbeatFunc(),
+		dispatchFunc:  client.GetDispatchMsg(),
+		connConf:      connConf,
+		lock:          sync.Mutex{},
+	}
 
 	return instance
 }

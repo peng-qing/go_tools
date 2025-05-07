@@ -3,6 +3,7 @@ package network
 import (
 	"iter"
 	"net"
+	"net/url"
 )
 
 // IProtocolCoder 网络协议编码器
@@ -70,6 +71,7 @@ type IConnectionManager interface {
 	Iter() iter.Seq[IConnection]
 }
 
+// IServer 服务接口
 type IServer interface {
 	// Serve 启动服务
 	Serve()
@@ -95,6 +97,40 @@ type IServer interface {
 	SetDispatchMsg(fn func(packet IPacket))
 	// GetConnectionManager 获取连接管理器
 	GetConnectionManager() IConnectionManager
+}
+
+// IClient 客户端接口
+type IClient interface {
+	// Start 启动客户端
+	Start()
+	// Close 关闭客户端
+	Close() error
+	// Restart 重新启动客户端
+	Restart()
+	// Connection 获取连接
+	Connection() IConnection
+	// OnConnect 获取连接回调
+	OnConnect() func(conn IConnection)
+	// SetOnConnect 设置连接回调
+	SetOnConnect(fn func(conn IConnection))
+	// OnDisconnect 获取断开连接回调
+	OnDisconnect() func(conn IConnection)
+	// SetOnDisconnect 设置断开连接回调
+	SetOnDisconnect(fn func(conn IConnection))
+	// ProtocolCoder 获取协议编码器
+	ProtocolCoder() IProtocolCoder
+	// HeartbeatFunc 获取心跳函数
+	HeartbeatFunc() func(conn IConnection)
+	// SetHeartbeatFunc 设置心跳函数
+	SetHeartbeatFunc(fn func(conn IConnection))
+	// GetDispatchMsg 获取消息分发函数
+	GetDispatchMsg() func(packet IPacket)
+	// SetDispatchMsg 设置消息分发函数
+	SetDispatchMsg(fn func(packet IPacket))
+	// GetUrl 获取URL
+	GetUrl() *url.URL
+	// SetUrl 设置URL
+	SetUrl(url *url.URL)
 }
 
 // IExecutor 执行器接口 暂时定义为一个空接口
