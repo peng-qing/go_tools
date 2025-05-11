@@ -35,6 +35,8 @@ type LTVTCPConnection struct {
 
 // Start 启动连接
 func (ltv *LTVTCPConnection) Start() {
+	ltv.ctx, ltv.ctxCancel = context.WithCancel(context.Background())
+
 	// 启动主循环
 	go ltv.Run()
 	// 调用连接建立回调
@@ -119,8 +121,6 @@ func (ltv *LTVTCPConnection) SendToQueue(data []byte) error {
 
 // NewLTVServerConnection 创建LTV TCP连接 服务器
 func newLTVServerConnection(connID uint64, conn net.Conn, server network.IServer, connConf *LTVConnectionConfig) *LTVTCPConnection {
-	ctx, ctxCancel := context.WithCancel(context.Background())
-
 	instance := &LTVTCPConnection{
 		connID:        connID,
 		rwc:           conn,
@@ -128,8 +128,6 @@ func newLTVServerConnection(connID uint64, conn net.Conn, server network.IServer
 		connConf:      connConf,
 		msgSendChan:   make(chan []byte, connConf.SendQueueSize),
 		buffer:        bytes.NewBuffer(make([]byte, 0)),
-		ctx:           ctx,
-		ctxCancel:     ctxCancel,
 		connM:         server.GetConnectionManager(),
 		heartbeatFunc: server.HeartbeatFunc(),
 		onConnect:     server.OnConnect(),
@@ -147,15 +145,12 @@ func newLTVServerConnection(connID uint64, conn net.Conn, server network.IServer
 
 // NewLTVClientConnection 创建LTV TCP连接 客户端
 func newLTVClientConnection(client network.IClient, conn net.Conn, connConf *LTVConnectionConfig) *LTVTCPConnection {
-	ctx, ctxCancel := context.WithCancel(context.Background())
 	instance := &LTVTCPConnection{
 		connID:        0, // 客户端忽略
 		rwc:           conn,
 		buffer:        bytes.NewBuffer(make([]byte, 0)),
 		msgSendChan:   make(chan []byte, connConf.SendQueueSize),
 		side:          NodeSide_Client,
-		ctx:           ctx,
-		ctxCancel:     ctxCancel,
 		onConnect:     client.OnConnect(),
 		onDisconnect:  client.OnDisconnect(),
 		protocolCoder: client.ProtocolCoder(),
@@ -319,9 +314,10 @@ func (ltv *LTVTCPConnection) writeLoop() {
 			}
 			if _, err := ltv.rwc.Write(msg); err != nil {
 				slog.Error("[LTVTCPConnection] write loop write error", "connID", ltv.connID, "err", err)
-				if err := ltv.Close(); err != nil {
+				if err = ltv.Close(); err != nil {
 					slog.Error("[LTVTCPConnection] write loop close conn error", "connID", ltv.connID, "err", err)
 				}
+				return
 			}
 			if ltv.connConf.WriteTimeout > 0 {
 				_ = ltv.rwc.SetWriteDeadline(time.Time{})
