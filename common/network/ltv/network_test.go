@@ -21,7 +21,6 @@ var serverConf = &LTVServerConfig{
 	Mode:             1,
 	MaxConn:          10,
 	MaxPacketSize:    1024 * 1024,
-	MaxMsgQSize:      200,
 	UsedLittleEndian: true,
 	TimerQueueSize:   100,
 	Frequency:        100,

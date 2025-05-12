@@ -2,13 +2,13 @@ package ltv
 
 import (
 	"errors"
-	"iter"
 	"sync"
 	"sync/atomic"
 
 	"go_tools/common/network"
 )
 
+// LTVConnectionManager 连接管理器
 type LTVConnectionManager struct {
 	connIndex int64
 	allConn   sync.Map // map[uint64]network.IConnection 所有连接
@@ -61,25 +61,13 @@ func (ltv *LTVConnectionManager) GetAllConnID() []uint64 {
 	return allConnIds
 }
 
-// Iter 迭代器
-func (ltv *LTVConnectionManager) Iter() iter.Seq[network.IConnection] {
-	return func(yield func(network.IConnection) bool) {
-		ltv.allConn.Range(func(_, value any) bool {
-			if conn, ok := value.(network.IConnection); ok {
-				return yield(conn)
-			}
-			return true
-		})
-	}
-}
-
 // Range 遍历
 func (ltv *LTVConnectionManager) Range(fn func(connId uint64, conn network.IConnection) error) error {
 	var rangeErr error
 	ltv.allConn.Range(func(key, value any) bool {
 		if conn, ok := value.(network.IConnection); !ok {
 			if err := fn(key.(uint64), conn); err != nil {
-				errors.Join(err)
+				rangeErr = errors.Join(err)
 			}
 		}
 		return true

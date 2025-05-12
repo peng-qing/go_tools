@@ -36,6 +36,7 @@ func NewLTVProtocolCoder(isLittleEndian bool) *LTVProtocolCoder {
 	return instance
 }
 
+// GetHeaderSize 获取头部字节数
 func (ltv *LTVProtocolCoder) GetHeaderSize() int {
 	return ltv.headerSize
 }

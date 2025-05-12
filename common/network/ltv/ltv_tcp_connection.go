@@ -30,6 +30,7 @@ type LTVTCPConnection struct {
 	dispatchFunc   func(packet network.IPacket)   // 自定义消息分发函数
 	connConf       *LTVConnectionConfig           // 连接配置
 	lastActiveTime time.Time                      // 最后活动时间
+	wg             sync.WaitGroup                 // 等待组
 	lock           sync.Mutex                     // 锁
 }
 
@@ -38,7 +39,8 @@ func (ltv *LTVTCPConnection) Start() {
 	ltv.ctx, ltv.ctxCancel = context.WithCancel(context.Background())
 
 	// 启动主循环
-	go ltv.Run()
+	go ltv.run()
+
 	// 调用连接建立回调
 	ltv.callOnConnect()
 }
@@ -51,16 +53,21 @@ func (ltv *LTVTCPConnection) Close() error {
 	if ltv.ctx != nil && ltv.ctxCancel != nil {
 		ltv.ctxCancel()
 	}
+
+	// 等待相关子协程退出
+	ltv.wg.Wait()
+
 	// 执行回调
-	if ltv.onDisconnect != nil {
-		ltv.onDisconnect(ltv)
-	}
+	ltv.callOnDisConnect()
 	// 关闭连接
 	if err := ltv.rwc.Close(); err != nil {
-		slog.Error("[LTVTCPConnection] close rwc conn failed", "connID", ltv.connID, "err", err)
+		slog.Error("[LTVTCPConnection] Close rwc conn failed", "connID", ltv.connID, "err", err)
 	}
+
 	// 移除连接管理
-	ltv.connM.RemoveByConnectionID(ltv.connID)
+	if ltv.side == NodeSide_Server && ltv.connM != nil {
+		ltv.connM.RemoveByConnectionID(ltv.connID)
+	}
 
 	return nil
 }
@@ -97,6 +104,35 @@ func (ltv *LTVTCPConnection) IsAlive() bool {
 	}
 	// 最后一次活跃时间是否超过心跳间隔
 	return time.Now().Sub(ltv.lastActiveTime) <= time.Duration(ltv.connConf.MaxHeartbeat)*time.Millisecond
+}
+
+func (ltv *LTVTCPConnection) Send(data []byte) error {
+	if ltv.isClosed() {
+		slog.Error("[LTVTCPConnection] Send conn is closed", "connID", ltv.connID)
+		return errors.New("connection is closed")
+	}
+	if len(data) <= 0 {
+		slog.Error("[LTVTCPConnection] Send data is empty", "connID", ltv.connID)
+		return errors.New("pack data is empty")
+	}
+	ltv.lock.Lock()
+	defer ltv.lock.Unlock()
+
+	// 设置写超时
+	if ltv.connConf.WriteTimeout > 0 {
+		_ = ltv.rwc.SetWriteDeadline(time.Now().Add(time.Duration(ltv.connConf.WriteTimeout) * time.Millisecond))
+	}
+	// 发送数据
+	n, err := ltv.rwc.Write(data)
+	// 取消写超时
+	if ltv.connConf.WriteTimeout > 0 {
+		_ = ltv.rwc.SetWriteDeadline(time.Time{})
+	}
+
+	// 更新网络统计信息
+	network.TS.IncrWrite(uint32(n))
+
+	return err
 }
 
 // SendToQueue 发送消息
@@ -184,45 +220,42 @@ func (ltv *LTVTCPConnection) callOnConnect() {
 }
 
 // Run 连接运行
-func (ltv *LTVTCPConnection) Run() {
+func (ltv *LTVTCPConnection) run() {
 	// 更新活跃时间
 	ltv.updateLastActiveTime()
-	waitGroup := sync.WaitGroup{} // 等待组
 	// 启动读写循环
-	waitGroup.Add(1)
+	ltv.wg.Add(1)
 	go func() {
-		defer waitGroup.Done()
+		defer ltv.wg.Done()
 		defer func() {
 			if err := recover(); err != nil {
-				slog.Error("[LTVTCPConnection] Run read loop panic", "err", err, "stack", debug.Stack())
+				slog.Error("[LTVTCPConnection] run read loop panic", "err", err, "stack", debug.Stack())
 			}
 		}()
 		ltv.readLoop()
 	}()
 
-	waitGroup.Add(1)
+	ltv.wg.Add(1)
 	go func() {
-		defer waitGroup.Done()
+		defer ltv.wg.Done()
 		defer func() {
 			if err := recover(); err != nil {
-				slog.Error("[LTVTCPConnection] Run write loop panic", "err", err, "stack", debug.Stack())
+				slog.Error("[LTVTCPConnection] run write loop panic", "err", err, "stack", debug.Stack())
 			}
 		}()
 		ltv.writeLoop()
 	}()
 
-	waitGroup.Add(1)
+	ltv.wg.Add(1)
 	go func() {
-		defer waitGroup.Done()
+		defer ltv.wg.Done()
 		defer func() {
 			if err := recover(); err != nil {
-				slog.Error("[LTVTCPConnection] Run heartbeat loop panic", "err", err, "stack", debug.Stack())
+				slog.Error("[LTVTCPConnection] run heartbeat loop panic", "err", err, "stack", debug.Stack())
 			}
 		}()
 		ltv.keepalive()
 	}()
-
-	waitGroup.Wait()
 }
 
 // readLoop 读循环
@@ -300,30 +333,19 @@ func (ltv *LTVTCPConnection) writeLoop() {
 		case <-ltv.ctx.Done():
 			slog.Info("[LTVTCPConnection] write loop conn close", "connID", ltv.connID)
 			close(ltv.msgSendChan)
-			for data := range ltv.msgSendChan {
-				ltv.rwc.Write(data)
-			}
 			return
 		case msg := <-ltv.msgSendChan:
 			if ltv.isClosed() {
 				slog.Info("[LTVTCPConnection] write loop conn is closed", "connID", ltv.connID)
 				return
 			}
-			if ltv.connConf.WriteTimeout > 0 {
-				_ = ltv.rwc.SetWriteDeadline(time.Now().Add(time.Duration(ltv.connConf.WriteTimeout) * time.Millisecond))
-			}
-			if _, err := ltv.rwc.Write(msg); err != nil {
+			if err := ltv.Send(msg); err != nil {
 				slog.Error("[LTVTCPConnection] write loop write error", "connID", ltv.connID, "err", err)
 				if err = ltv.Close(); err != nil {
 					slog.Error("[LTVTCPConnection] write loop close conn error", "connID", ltv.connID, "err", err)
 				}
 				return
 			}
-			if ltv.connConf.WriteTimeout > 0 {
-				_ = ltv.rwc.SetWriteDeadline(time.Time{})
-			}
-			// 写的时候是否需要更新...
-			//ltv.updateLastActivityTime()
 		}
 	}
 }
@@ -355,7 +377,13 @@ func (ltv *LTVTCPConnection) keepalive() {
 			if ltv.heartbeatFunc != nil {
 				ltv.heartbeatFunc(ltv)
 			}
-			//ltv.updateLastActivityTime()
 		}
+	}
+}
+
+// callOnDisConnect 调用连接断开回调
+func (ltv *LTVTCPConnection) callOnDisConnect() {
+	if ltv.onDisconnect != nil {
+		ltv.onDisconnect(ltv)
 	}
 }

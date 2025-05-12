@@ -19,6 +19,7 @@ type LTVPacket struct {
 	TotalLen uint32     // LTV格式包总长度
 }
 
+// NewLTVPacket 创建LTV格式包
 func NewLTVPacket(msgType uint32, data []byte) network.IPacket {
 	return &LTVPacket{
 		Header: &LTVHeader{

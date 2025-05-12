@@ -1,7 +1,6 @@
 package network
 
 import (
-	"iter"
 	"net"
 	"net/url"
 )
@@ -47,6 +46,8 @@ type IConnection interface {
 	LocalAddrString() string
 	// IsAlive 判断当前连接是否存活
 	IsAlive() bool
+	// Send 立刻发送数据
+	Send(data []byte) error
 	// SendToQueue 发送数据到队列
 	SendToQueue(data []byte) error
 }
@@ -67,8 +68,6 @@ type IConnectionManager interface {
 	GetAllConnID() []uint64
 	// Range 遍历连接
 	Range(fn func(connId uint64, conn IConnection) error) error
-	// Iter 获取连接迭代器
-	Iter() iter.Seq[IConnection]
 }
 
 // IServer 服务接口

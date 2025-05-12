@@ -2,7 +2,6 @@ package ltv
 
 // LTVServerConfig 服务器配置
 type LTVServerConfig struct {
-	ServerID         uint64               `yaml:"server_id" json:"server_id"`                   // 服务器ID
 	IP               string               `yaml:"ip" json:"ip"`                                 // IP 服务器IP地址
 	Port             int                  `yaml:"port" json:"port"`                             // 端口
 	WsPort           int                  `yaml:"ws_port" json:"ws_port"`                       // Websocket 端口

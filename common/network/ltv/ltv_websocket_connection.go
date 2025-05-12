@@ -34,7 +34,7 @@ type LTVWebsocketConnection struct {
 func (ltv *LTVWebsocketConnection) Start() {
 	ltv.ctx, ltv.ctxCancel = context.WithCancel(context.Background())
 	// 启动主循环
-	go ltv.Run()
+	go ltv.run()
 
 	ltv.callOnConnect()
 }
@@ -54,7 +54,9 @@ func (ltv *LTVWebsocketConnection) Close() error {
 		slog.Error("[LTVTCPConnection] close rwc conn failed", "connID", ltv.connID, "err", err)
 	}
 	// 移除连接
-	ltv.connM.RemoveByConnectionID(ltv.connID)
+	if ltv.side == NodeSide_Server && ltv.connM != nil {
+		ltv.connM.RemoveByConnectionID(ltv.connID)
+	}
 
 	return nil
 }
@@ -86,6 +88,41 @@ func (ltv *LTVWebsocketConnection) IsAlive() bool {
 	return time.Now().Sub(ltv.lastActiveTime) <= time.Duration(ltv.connConf.MaxHeartbeat)*time.Millisecond
 }
 
+func (ltv *LTVWebsocketConnection) Send(data []byte) error {
+	if ltv.isClosed() {
+		slog.Error("[LTVWebsocketConnection] Send conn is closed", "connID", ltv.connID)
+		return errors.New("connection is closed")
+	}
+	if len(data) <= 0 {
+		slog.Error("[LTVWebsocketConnection] Send data is empty", "connID", ltv.connID)
+		return errors.New("pack data is empty")
+	}
+	ltv.lock.Lock()
+	defer ltv.lock.Unlock()
+
+	// 设置写超时
+	if ltv.connConf.WriteTimeout > 0 {
+		_ = ltv.rwc.SetWriteDeadline(time.Now().Add(time.Duration(ltv.connConf.WriteTimeout) * time.Millisecond))
+	}
+	// 发送数据
+	if err := ltv.rwc.WriteMessage(websocket.BinaryMessage, data); err != nil {
+		slog.Error("[LTVWebsocketConnection] write loop write error", "connID", ltv.connID, "err", err)
+		if err = ltv.Close(); err != nil {
+			slog.Error("[LTVWebsocketConnection] write loop close conn error", "connID", ltv.connID, "err", err)
+		}
+		return err
+	}
+	// 取消写超时
+	if ltv.connConf.WriteTimeout > 0 {
+		_ = ltv.rwc.SetWriteDeadline(time.Time{})
+	}
+
+	// 更新网络统计信息
+	network.TS.IncrWrite(uint32(len(data)))
+
+	return nil
+}
+
 func (ltv *LTVWebsocketConnection) SendToQueue(data []byte) error {
 	if ltv.isClosed() {
 		slog.Error("[LTVWebsocketConnection] SendToQueue conn is closed", "connID", ltv.connID)
@@ -111,7 +148,7 @@ func (ltv *LTVWebsocketConnection) callOnConnect() {
 }
 
 // Run 连接主循环
-func (ltv *LTVWebsocketConnection) Run() {
+func (ltv *LTVWebsocketConnection) run() {
 	// 更新活跃时间
 	ltv.updateLastActiveTime()
 	// 启动读写循环
@@ -121,7 +158,7 @@ func (ltv *LTVWebsocketConnection) Run() {
 		defer wg.Done()
 		defer func() {
 			if err := recover(); err != nil {
-				slog.Error("[LTVWebsocketConnection] Run read loop panic", "err", err, "stack", debug.Stack())
+				slog.Error("[LTVWebsocketConnection] run read loop panic", "err", err, "stack", debug.Stack())
 			}
 		}()
 		ltv.readLoop()
@@ -132,7 +169,7 @@ func (ltv *LTVWebsocketConnection) Run() {
 		defer wg.Done()
 		defer func() {
 			if err := recover(); err != nil {
-				slog.Error("[LTVWebsocketConnection] Run write loop panic", "err", err, "stack", debug.Stack())
+				slog.Error("[LTVWebsocketConnection] run write loop panic", "err", err, "stack", debug.Stack())
 			}
 		}()
 		ltv.writeLoop()
@@ -143,7 +180,7 @@ func (ltv *LTVWebsocketConnection) Run() {
 		defer wg.Done()
 		defer func() {
 			if err := recover(); err != nil {
-				slog.Error("[LTVWebsocketConnection] Run heartbeat loop panic", "err", err, "stack", debug.Stack())
+				slog.Error("[LTVWebsocketConnection] run heartbeat loop panic", "err", err, "stack", debug.Stack())
 			}
 		}()
 		ltv.keepalive()
@@ -217,31 +254,18 @@ func (ltv *LTVWebsocketConnection) writeLoop() {
 		case <-ltv.ctx.Done():
 			slog.Info("[LTVWebsocketConnection] write loop conn close", "connID", ltv.connID)
 			close(ltv.msgSendChan)
-			for data := range ltv.msgSendChan {
-				if err := ltv.rwc.WriteMessage(websocket.BinaryMessage, data); err != nil {
-					slog.Error("[LTVWebsocketConnection] write loop write error", "connID", ltv.connID, "err", err, "message")
-					return
-				}
-			}
 			return
 		case msg := <-ltv.msgSendChan:
 			if ltv.isClosed() {
 				slog.Info("[LTVWebsocketConnection] write loop conn is closed", "connID", ltv.connID)
 				return
 			}
-			if ltv.connConf.WriteTimeout > 0 {
-				_ = ltv.rwc.SetWriteDeadline(time.Now().Add(time.Duration(ltv.connConf.WriteTimeout) * time.Millisecond))
-			}
-			// TODO add lock
-			if err := ltv.rwc.WriteMessage(websocket.BinaryMessage, msg); err != nil {
+			if err := ltv.Send(msg); err != nil {
 				slog.Error("[LTVWebsocketConnection] write loop write error", "connID", ltv.connID, "err", err)
 				if err = ltv.Close(); err != nil {
 					slog.Error("[LTVWebsocketConnection] write loop close conn error", "connID", ltv.connID, "err", err)
 				}
 				return
-			}
-			if ltv.connConf.WriteTimeout > 0 {
-				_ = ltv.rwc.SetWriteDeadline(time.Time{})
 			}
 		}
 	}
@@ -280,4 +304,46 @@ func (ltv *LTVWebsocketConnection) keepalive() {
 			}
 		}
 	}
+}
+
+// newLTVServerWebsocketConnection 创建LTV websocket连接 服务器
+func newLTVServerWebsocketConnection(connID uint64, conn *websocket.Conn, server network.IServer, connConf *LTVConnectionConfig) *LTVWebsocketConnection {
+	instance := &LTVWebsocketConnection{
+		connID:        connID,
+		rwc:           conn,
+		side:          NodeSide_Server,
+		connConf:      connConf,
+		msgSendChan:   make(chan []byte, connConf.SendQueueSize),
+		connM:         server.GetConnectionManager(),
+		heartbeatFunc: server.HeartbeatFunc(),
+		onConnect:     server.OnConnect(),
+		onDisconnect:  server.OnDisconnect(),
+		protocolCoder: server.ProtocolCoder(),
+		dispatchFunc:  server.GetDispatchMsg(),
+		lock:          sync.Mutex{},
+	}
+
+	// 注册到连接管理器
+	instance.connM.Add(instance)
+
+	return instance
+}
+
+// NewLTVClientConnection 创建LTV TCP连接 客户端
+func newLTVClientWebsocketConnection(client network.IClient, conn *websocket.Conn, connConf *LTVConnectionConfig) *LTVWebsocketConnection {
+	instance := &LTVWebsocketConnection{
+		connID:        0, // 客户端忽略
+		rwc:           conn,
+		msgSendChan:   make(chan []byte, connConf.SendQueueSize),
+		side:          NodeSide_Client,
+		onConnect:     client.OnConnect(),
+		onDisconnect:  client.OnDisconnect(),
+		protocolCoder: client.ProtocolCoder(),
+		heartbeatFunc: client.HeartbeatFunc(),
+		dispatchFunc:  client.GetDispatchMsg(),
+		connConf:      connConf,
+		lock:          sync.Mutex{},
+	}
+
+	return instance
 }

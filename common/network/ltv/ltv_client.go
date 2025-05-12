@@ -15,6 +15,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// LTVClient ltv客户端
 type LTVClient struct {
 	URL           *url.URL                       //  url
 	ErrChan       chan error                     // 错误通道
@@ -153,7 +154,7 @@ func NewLTVClient(cliConf *LTVClientConfig, opts ...options.Option[LTVClient]) *
 	}
 
 	// 设置协议模式
-	if instance.cliConf.Mode == Websocket {
+	if instance.cliConf.Mode == NetMode_Websocket {
 		instance.wsDialer = &websocket.Dialer{}
 	}
 
@@ -170,19 +171,20 @@ func (ltv *LTVClient) Run() {
 
 	var dealConn network.IConnection
 	switch ltv.cliConf.Mode {
-	//case Websocket:
-	//	wsAddr := fmt.Sprintf("ws://%s:%d", ltv.IP, ltv.Port)
-	//	if ltv.URL != nil {
-	//		wsAddr = ltv.URL.String()
-	//	}
-	//	// 创建原始的websocket连接
-	//	wsConn, _, err := ltv.wsDialer.Dial(wsAddr, nil)
-	//	if err != nil {
-	//		slog.Error("[LTVClient] Run websocket dial error", "IP", ltv.IP, "Port", ltv.Port, "Mode", ltv.Mode, "err", err)
-	//		ltv.ErrChan <- err
-	//		return
-	//	}
-	//conn = NewLTVWebsocketConnection(wsConn, ltv.protocolCoder)
+	case NetMode_Websocket:
+		wsAddr := fmt.Sprintf("ws://%s:%d", ltv.cliConf.IP, ltv.cliConf.Port)
+		if ltv.URL != nil {
+			wsAddr = ltv.URL.String()
+		}
+		// 创建原始的websocket连接
+		wsConn, _, err := ltv.wsDialer.Dial(wsAddr, nil)
+		if err != nil {
+			slog.Error("[LTVClient] Run websocket dial error", "IP", ltv.cliConf.IP, "Port",
+				ltv.cliConf.Port, "Mode", ltv.cliConf.Mode, "err", err)
+			ltv.ErrChan <- err
+			return
+		}
+		dealConn = newLTVClientWebsocketConnection(ltv, wsConn, ltv.cliConf.Connection)
 	default:
 		// TCP
 		addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", ltv.cliConf.IP, ltv.cliConf.Port))
