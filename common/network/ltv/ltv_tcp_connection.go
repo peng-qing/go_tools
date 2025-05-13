@@ -13,26 +13,35 @@ import (
 	"go_tools/common/network"
 )
 
+var (
+	// 断言 检查是否实现 network.IConnection 接口
+	_ network.IConnection = (*LTVTCPConnection)(nil)
+)
+
 // LTVTCPConnection LTV TCP连接
 type LTVTCPConnection struct {
-	connID         uint64                         // 连接ID
-	rwc            net.Conn                       // 原始连接
-	connM          network.IConnectionManager     // 连接管理
-	buffer         *bytes.Buffer                  // 缓冲区
-	msgSendChan    chan []byte                    // 等待发送消息队列
-	side           NetSide                        // 连接类型
-	ctx            context.Context                // 上下文
-	ctxCancel      context.CancelFunc             // 上下文取消
-	onConnect      func(conn network.IConnection) // 连接建立回调
-	onDisconnect   func(conn network.IConnection) // 连接断开回调
-	protocolCoder  network.IProtocolCoder         // 协议编解码器
-	heartbeatFunc  func(conn network.IConnection) // 自定义心跳函数
-	dispatchFunc   func(packet network.IPacket)   // 自定义消息分发函数
-	connConf       *LTVConnectionConfig           // 连接配置
-	lastActiveTime time.Time                      // 最后活动时间
-	wg             sync.WaitGroup                 // 等待组
-	lock           sync.Mutex                     // 锁
+	connID         uint64                                                 // 连接ID 客户端性质的连接 connID默认为0
+	rwc            net.Conn                                               // 原始连接
+	connM          network.IConnectionManager                             // 连接管理 只存在服务端性质连接
+	buffer         *bytes.Buffer                                          // 缓冲区
+	msgSendChan    chan []byte                                            // 等待发送消息队列
+	side           NetSide                                                // 连接类型
+	ctx            context.Context                                        // 上下文
+	ctxCancel      context.CancelFunc                                     // 上下文取消
+	onConnect      func(conn network.IConnection)                         // 连接建立回调
+	onDisconnect   func(conn network.IConnection)                         // 连接断开回调
+	protocolCoder  network.IProtocolCoder                                 // 协议编解码器
+	heartbeatFunc  func(conn network.IConnection)                         // 自定义心跳函数
+	dispatchFunc   func(conn network.IConnection, packet network.IPacket) // 自定义消息分发函数
+	connConf       *LTVConnectionConfig                                   // 连接配置
+	lastActiveTime time.Time                                              // 最后活动时间
+	wg             sync.WaitGroup                                         // 等待组
+	lock           sync.Mutex                                             // 锁
 }
+
+// ===============================================================================
+// 实现 network.IConnection
+// ===============================================================================
 
 // Start 启动连接
 func (ltv *LTVTCPConnection) Start() {
@@ -155,49 +164,9 @@ func (ltv *LTVTCPConnection) SendToQueue(data []byte) error {
 	}
 }
 
-// NewLTVServerConnection 创建LTV TCP连接 服务器
-func newLTVServerConnection(connID uint64, conn net.Conn, server network.IServer, connConf *LTVConnectionConfig) *LTVTCPConnection {
-	instance := &LTVTCPConnection{
-		connID:        connID,
-		rwc:           conn,
-		side:          NodeSide_Server,
-		connConf:      connConf,
-		msgSendChan:   make(chan []byte, connConf.SendQueueSize),
-		buffer:        bytes.NewBuffer(make([]byte, 0)),
-		connM:         server.GetConnectionManager(),
-		heartbeatFunc: server.HeartbeatFunc(),
-		onConnect:     server.OnConnect(),
-		onDisconnect:  server.OnDisconnect(),
-		protocolCoder: server.ProtocolCoder(),
-		dispatchFunc:  server.GetDispatchMsg(),
-		lock:          sync.Mutex{},
-	}
-
-	// 注册到连接管理器
-	instance.connM.Add(instance)
-
-	return instance
-}
-
-// NewLTVClientConnection 创建LTV TCP连接 客户端
-func newLTVClientConnection(client network.IClient, conn net.Conn, connConf *LTVConnectionConfig) *LTVTCPConnection {
-	instance := &LTVTCPConnection{
-		connID:        0, // 客户端忽略
-		rwc:           conn,
-		buffer:        bytes.NewBuffer(make([]byte, 0)),
-		msgSendChan:   make(chan []byte, connConf.SendQueueSize),
-		side:          NodeSide_Client,
-		onConnect:     client.OnConnect(),
-		onDisconnect:  client.OnDisconnect(),
-		protocolCoder: client.ProtocolCoder(),
-		heartbeatFunc: client.HeartbeatFunc(),
-		dispatchFunc:  client.GetDispatchMsg(),
-		connConf:      connConf,
-		lock:          sync.Mutex{},
-	}
-
-	return instance
-}
+// ===============================================================================
+// 私有接口
+// ===============================================================================
 
 // isClosed 判断连接是否关闭
 func (ltv *LTVTCPConnection) isClosed() bool {
@@ -207,7 +176,7 @@ func (ltv *LTVTCPConnection) isClosed() bool {
 	return false
 }
 
-// updateLastActivityTime 更新最后活跃时间
+// updateLastActiveTime 更新最后活跃时间
 func (ltv *LTVTCPConnection) updateLastActiveTime() {
 	ltv.lastActiveTime = time.Now()
 }
@@ -219,11 +188,11 @@ func (ltv *LTVTCPConnection) callOnConnect() {
 	}
 }
 
-// Run 连接运行
+// run 连接运行
 func (ltv *LTVTCPConnection) run() {
 	// 更新活跃时间
 	ltv.updateLastActiveTime()
-	// 启动读写循环
+	// 启动读循环
 	ltv.wg.Add(1)
 	go func() {
 		defer ltv.wg.Done()
@@ -235,6 +204,7 @@ func (ltv *LTVTCPConnection) run() {
 		ltv.readLoop()
 	}()
 
+	// 启动写循环
 	ltv.wg.Add(1)
 	go func() {
 		defer ltv.wg.Done()
@@ -246,6 +216,7 @@ func (ltv *LTVTCPConnection) run() {
 		ltv.writeLoop()
 	}()
 
+	// 启动心跳循环
 	ltv.wg.Add(1)
 	go func() {
 		defer ltv.wg.Done()
@@ -294,6 +265,9 @@ func (ltv *LTVTCPConnection) readLoop() {
 				_ = ltv.rwc.SetReadDeadline(time.Time{})
 			}
 			if n > 0 {
+				// 更新网络统计信息
+				network.TS.IncrRead(uint32(n))
+
 				// 成功读到对端数据 更新活跃时间
 				ltv.updateLastActiveTime()
 				// 写入读取数据到缓冲区
@@ -318,7 +292,7 @@ func (ltv *LTVTCPConnection) readLoop() {
 						ltv.buffer.Next(int(totalLen))
 						// 处理完整数据包
 						// packet -> dispatcher -> handler -> message -> logic
-						ltv.dispatchFunc(packet)
+						ltv.dispatchFunc(ltv, packet)
 					}
 				}
 			}
@@ -386,4 +360,52 @@ func (ltv *LTVTCPConnection) callOnDisConnect() {
 	if ltv.onDisconnect != nil {
 		ltv.onDisconnect(ltv)
 	}
+}
+
+// ===============================================================================
+// 实例化接口
+// ===============================================================================
+
+// NewLTVServerConnection 创建LTV TCP连接 服务器
+func newLTVServerConnection(connID uint64, conn net.Conn, server network.IServer, connConf *LTVConnectionConfig) *LTVTCPConnection {
+	instance := &LTVTCPConnection{
+		connID:        connID,
+		rwc:           conn,
+		side:          NodeSide_Server,
+		connConf:      connConf,
+		msgSendChan:   make(chan []byte, connConf.SendQueueSize),
+		buffer:        bytes.NewBuffer(make([]byte, 0)),
+		connM:         server.GetConnectionManager(),
+		heartbeatFunc: server.HeartbeatFunc(),
+		onConnect:     server.OnConnect(),
+		onDisconnect:  server.OnDisconnect(),
+		protocolCoder: server.ProtocolCoder(),
+		dispatchFunc:  server.GetDispatchMsg(),
+		lock:          sync.Mutex{},
+	}
+
+	// 注册到连接管理器
+	instance.connM.Add(instance)
+
+	return instance
+}
+
+// NewLTVClientConnection 创建LTV TCP连接 客户端
+func newLTVClientConnection(client network.IClient, conn net.Conn, connConf *LTVConnectionConfig) *LTVTCPConnection {
+	instance := &LTVTCPConnection{
+		connID:        0, // 客户端忽略
+		rwc:           conn,
+		buffer:        bytes.NewBuffer(make([]byte, 0)),
+		msgSendChan:   make(chan []byte, connConf.SendQueueSize),
+		side:          NodeSide_Client,
+		onConnect:     client.OnConnect(),
+		onDisconnect:  client.OnDisconnect(),
+		protocolCoder: client.ProtocolCoder(),
+		heartbeatFunc: client.HeartbeatFunc(),
+		dispatchFunc:  client.GetDispatchMsg(),
+		connConf:      connConf,
+		lock:          sync.Mutex{},
+	}
+
+	return instance
 }

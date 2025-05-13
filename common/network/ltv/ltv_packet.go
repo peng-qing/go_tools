@@ -3,7 +3,7 @@ package ltv
 import "go_tools/common/network"
 
 var (
-	// 检查实现 IPacket
+	// 检查实现 network.IPacket 接口
 	_ network.IPacket = (*LTVPacket)(nil)
 )
 
@@ -19,17 +19,9 @@ type LTVPacket struct {
 	TotalLen uint32     // LTV格式包总长度
 }
 
-// NewLTVPacket 创建LTV格式包
-func NewLTVPacket(msgType uint32, data []byte) network.IPacket {
-	return &LTVPacket{
-		Header: &LTVHeader{
-			Type:   msgType,
-			Length: uint32(len(data)),
-		},
-		Data:     data,
-		TotalLen: uint32(len(data) + LTVHeaderSize),
-	}
-}
+// ===============================================================================
+// 实现 network.IPacket 接口
+// ===============================================================================
 
 // GetData 获取LTV格式包数据域
 func (l *LTVPacket) GetData() []byte {
@@ -49,4 +41,20 @@ func (l *LTVPacket) GetHeader() any {
 // GetTotalLength 获取LTV格式包总长度
 func (l *LTVPacket) GetTotalLength() uint32 {
 	return l.TotalLen
+}
+
+// ===============================================================================
+// 实例化方法
+// ===============================================================================
+
+// NewLTVPacket 创建LTV格式包
+func NewLTVPacket(msgType uint32, data []byte) network.IPacket {
+	return &LTVPacket{
+		Header: &LTVHeader{
+			Type:   msgType,
+			Length: uint32(len(data)),
+		},
+		Data:     data,
+		TotalLen: uint32(len(data) + LTVHeaderSize),
+	}
 }

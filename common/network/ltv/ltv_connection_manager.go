@@ -8,11 +8,20 @@ import (
 	"go_tools/common/network"
 )
 
+var (
+	// 断言 检查是否实现 network.IConnectionManager 接口
+	_ network.IConnectionManager = (*LTVConnectionManager)(nil)
+)
+
 // LTVConnectionManager 连接管理器
 type LTVConnectionManager struct {
 	connIndex int64
 	allConn   sync.Map // map[uint64]network.IConnection 所有连接
 }
+
+// ===============================================================================
+// 实现 network.IConnectionManager 接口
+// ===============================================================================
 
 // Add 添加连接
 func (ltv *LTVConnectionManager) Add(conn network.IConnection) {
@@ -74,6 +83,10 @@ func (ltv *LTVConnectionManager) Range(fn func(connId uint64, conn network.IConn
 	})
 	return rangeErr
 }
+
+// ===============================================================================
+// 实例化方法
+// ===============================================================================
 
 // NewLTVConnectionManager 创建一个连接管理器
 func NewLTVConnectionManager() *LTVConnectionManager {

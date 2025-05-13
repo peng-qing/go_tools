@@ -3,6 +3,7 @@ package ltv
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 
 	"go_tools/common/network"
 )
@@ -24,17 +25,9 @@ type LTVProtocolCoder struct {
 	headerSize int              // 头部字节数
 }
 
-// NewLTVProtocolCoder 创建LTV协议编码器
-func NewLTVProtocolCoder(isLittleEndian bool) *LTVProtocolCoder {
-	instance := &LTVProtocolCoder{
-		headerSize: LTVHeaderSize,
-	}
-	instance.byteOrder = binary.BigEndian
-	if isLittleEndian {
-		instance.byteOrder = binary.LittleEndian
-	}
-	return instance
-}
+// ===============================================================================
+// 实现 network.IProtocolCoder 接口
+// ===============================================================================
 
 // GetHeaderSize 获取头部字节数
 func (ltv *LTVProtocolCoder) GetHeaderSize() int {
@@ -68,7 +61,7 @@ func (ltv *LTVProtocolCoder) Decode(buffer []byte) (network.IPacket, uint32, err
 func (ltv *LTVProtocolCoder) Encode(data network.IPacket) ([]byte, error) {
 	ltvHeader, ok := data.GetHeader().(*LTVHeader)
 	if !ok {
-		return nil, ErrInvalidPacket
+		return nil, errors.New("invalid net packet")
 	}
 	dataVal := data.GetData()
 	length := len(dataVal)
@@ -88,4 +81,20 @@ func (ltv *LTVProtocolCoder) Encode(data network.IPacket) ([]byte, error) {
 	}
 
 	return buffer.Bytes(), nil
+}
+
+// ===============================================================================
+// 实例化方法
+// ===============================================================================
+
+// NewLTVProtocolCoder 创建LTV协议编码器
+func NewLTVProtocolCoder(isLittleEndian bool) *LTVProtocolCoder {
+	instance := &LTVProtocolCoder{
+		headerSize: LTVHeaderSize,
+	}
+	instance.byteOrder = binary.BigEndian
+	if isLittleEndian {
+		instance.byteOrder = binary.LittleEndian
+	}
+	return instance
 }

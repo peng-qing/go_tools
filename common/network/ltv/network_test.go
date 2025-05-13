@@ -13,14 +13,12 @@ import (
 )
 
 var serverConf = &LTVServerConfig{
-	ServerID:         1,
 	IP:               "127.0.0.1",
 	Port:             30101,
 	WsPort:           0,
 	WsPath:           "/",
 	Mode:             1,
 	MaxConn:          10,
-	MaxPacketSize:    1024 * 1024,
 	UsedLittleEndian: true,
 	TimerQueueSize:   100,
 	Frequency:        100,
@@ -35,7 +33,7 @@ var serverConf = &LTVServerConfig{
 }
 
 func TestServer(t *testing.T) {
-	server := NewLTVServer(serverConf)
+	server := NewLTVServer(0, serverConf)
 	server.SetHeartbeatFunc(func(conn network.IConnection) {
 		fmt.Printf("heartbeat func called, connID:%d\n", conn.GetConnectionID())
 		// 回一个心跳
@@ -44,7 +42,7 @@ func TestServer(t *testing.T) {
 			return
 		}
 	})
-	server.SetDispatchMsg(func(packet network.IPacket) {
+	server.SetDispatchMsg(func(conn network.IConnection, packet network.IPacket) {
 		fmt.Printf("dispatch msg called, packet:%s\n", string(packet.GetData()))
 	})
 	server.SetOnConnect(func(conn network.IConnection) {

@@ -19,67 +19,45 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+var (
+	// 断言 检查是否实现 network.IServer
+	_ network.IServer = (*LTVServer)(nil)
+)
+
 // LTVServer LTV服务器
 type LTVServer struct {
-	serverID      uint64                         // 服务器ID
-	cIDGenerator  uint64                         // 连接ID生成器
-	srvConf       *LTVServerConfig               // 服务器配置
-	connM         network.IConnectionManager     // 连接管理器
-	protocolCoder network.IProtocolCoder         // 协议编码器
-	ctx           context.Context                // 上下文
-	ctxCancel     context.CancelFunc             // 上下文取消函数
-	onConnect     func(conn network.IConnection) // 连接回调
-	onDisconnect  func(conn network.IConnection) // 断开连接回调
-	heartbeatFunc func(conn network.IConnection) // 心跳函数
-	dispatchFunc  func(packet network.IPacket)   // 消息处理函数
-	timerM        *timer.TimerManager            // 定时器管理器
-	ticker        *time.Ticker                   // 定时器
-	upgrader      *websocket.Upgrader            // websocket升级器
-	waitGroup     sync.WaitGroup                 // WaitGroup
+	serverID      uint64                                                 // 服务器ID
+	cIDGenerator  uint64                                                 // 连接ID生成器
+	srvConf       *LTVServerConfig                                       // 服务器配置
+	connM         network.IConnectionManager                             // 连接管理器
+	protocolCoder network.IProtocolCoder                                 // 协议编码器
+	ctx           context.Context                                        // 上下文
+	ctxCancel     context.CancelFunc                                     // 上下文取消函数
+	onConnect     func(conn network.IConnection)                         // 连接回调
+	onDisconnect  func(conn network.IConnection)                         // 断开连接回调
+	heartbeatFunc func(conn network.IConnection)                         // 心跳函数
+	dispatchFunc  func(conn network.IConnection, packet network.IPacket) // 消息处理函数
+	timerM        *timer.TimerManager                                    // 定时器管理器
+	ticker        *time.Ticker                                           // 定时器
+	upgrader      *websocket.Upgrader                                    // websocket升级器
+	waitGroup     sync.WaitGroup                                         // WaitGroup
 }
 
-// NewLTVServer 创建LTV服务器
-func NewLTVServer(serverID uint64, srvConf *LTVServerConfig, opts ...options.Option[LTVServer]) *LTVServer {
-	ctx, ctxCancel := context.WithCancel(context.Background())
-	protocolCoder := NewLTVProtocolCoder(srvConf.UsedLittleEndian)
-	connM := NewLTVConnectionManager()
-	instance := &LTVServer{
-		serverID:      serverID,
-		cIDGenerator:  0,
-		srvConf:       srvConf,
-		protocolCoder: protocolCoder,
-		connM:         connM,
-		ctx:           ctx,
-		ctxCancel:     ctxCancel,
-		timerM:        timer.NewTimerManager(srvConf.TimerQueueSize),
-		ticker:        time.NewTicker(time.Duration(srvConf.Frequency) * time.Millisecond),
-		upgrader: &websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				return true
-			},
-			ReadBufferSize: srvConf.Connection.MaxIOReadSize,
-		},
-		waitGroup: sync.WaitGroup{},
-	}
-
-	for _, opt := range opts {
-		opt.Apply(instance)
-	}
-
-	return instance
-}
+// ===============================================================================
+// 实现 network.IServer 接口
+// ===============================================================================
 
 // Serve 启动服务器
 func (ltv *LTVServer) Serve() {
 	slog.Info("[LTVServer] Serve", "ServerID", ltv.serverID, "IP", ltv.srvConf.IP, "Port", ltv.srvConf.Port, "WsPort", ltv.srvConf.WsPort)
 	// 启动主循环
-	ltv.Run()
+	ltv.run()
 }
 
 // Close 关闭服务器
 func (ltv *LTVServer) Close() error {
 	if ltv.isClosed() {
-		return ErrServerRepeatClose
+		return errors.New("server repeat close")
 	}
 	if ltv.ctx != nil && ltv.ctxCancel != nil {
 		ltv.ctxCancel()
@@ -98,6 +76,7 @@ func (ltv *LTVServer) Close() error {
 	return err
 }
 
+// GetConnectionManager 获取连接管理器
 func (ltv *LTVServer) GetConnectionManager() network.IConnectionManager {
 	return ltv.connM
 }
@@ -138,16 +117,21 @@ func (ltv *LTVServer) SetHeartbeatFunc(fn func(conn network.IConnection)) {
 }
 
 // SetDispatchMsg 设置消息处理函数
-func (ltv *LTVServer) SetDispatchMsg(fn func(packet network.IPacket)) {
+func (ltv *LTVServer) SetDispatchMsg(fn func(conn network.IConnection, packet network.IPacket)) {
 	ltv.dispatchFunc = fn
 }
 
-func (ltv *LTVServer) GetDispatchMsg() func(packet network.IPacket) {
+// GetDispatchMsg 获取消息处理函数
+func (ltv *LTVServer) GetDispatchMsg() func(conn network.IConnection, packet network.IPacket) {
 	return ltv.dispatchFunc
 }
 
+// ===============================================================================
+// 私有接口
+// ===============================================================================
+
 // Run 服务器主循环
-func (ltv *LTVServer) Run() {
+func (ltv *LTVServer) run() {
 	slog.Info("[LTVServer] Run", "serverID", ltv.serverID, "conf", ltv.srvConf)
 	ltv.waitGroup.Add(1)
 	go func() {
@@ -220,10 +204,15 @@ func (ltv *LTVServer) listenWebsocketConn() {
 		}
 		network.AcceptDelay.Reset()
 		cID := atomic.AddUint64(&ltv.cIDGenerator, 1)
-		// TODO 创建 IConnection
-		//dealConn := newLTV
-		conn.WriteJSON(cID)
+		dealConn := newLTVServerWebsocketConnection(cID, conn, ltv, ltv.srvConf.Connection)
+		dealConn.Start()
 	})
+
+	err := http.ListenAndServe(fmt.Sprintf("%s:%d", ltv.srvConf.IP, ltv.srvConf.WsPort), nil)
+	if err != nil {
+		slog.Error("[LTVServer] ListenWebsocketConn listen websocket error", "ServerID", ltv.serverID, "err", err)
+		panic(err)
+	}
 }
 
 // listenTCPConn 监听TCP连接
@@ -277,9 +266,45 @@ func (ltv *LTVServer) listenTCPConn() {
 	}
 }
 
+// isClosed 判断服务器是否关闭
 func (ltv *LTVServer) isClosed() bool {
 	if ltv.ctx == nil || ltv.ctx.Err() != nil {
 		return true
 	}
 	return false
+}
+
+// ===============================================================================
+// 实例化接口
+// ===============================================================================
+
+// NewLTVServer 创建LTV服务器
+func NewLTVServer(serverID uint64, srvConf *LTVServerConfig, opts ...options.Option[LTVServer]) *LTVServer {
+	ctx, ctxCancel := context.WithCancel(context.Background())
+	protocolCoder := NewLTVProtocolCoder(srvConf.UsedLittleEndian)
+	connM := NewLTVConnectionManager()
+	instance := &LTVServer{
+		serverID:      serverID,
+		cIDGenerator:  0,
+		srvConf:       srvConf,
+		protocolCoder: protocolCoder,
+		connM:         connM,
+		ctx:           ctx,
+		ctxCancel:     ctxCancel,
+		timerM:        timer.NewTimerManager(srvConf.TimerQueueSize),
+		ticker:        time.NewTicker(time.Duration(srvConf.Frequency) * time.Millisecond),
+		upgrader: &websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
+			ReadBufferSize: srvConf.Connection.MaxIOReadSize,
+		},
+		waitGroup: sync.WaitGroup{},
+	}
+
+	for _, opt := range opts {
+		opt.Apply(instance)
+	}
+
+	return instance
 }

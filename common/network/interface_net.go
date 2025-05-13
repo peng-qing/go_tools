@@ -91,9 +91,9 @@ type IServer interface {
 	// SetHeartbeatFunc 设置心跳回调
 	SetHeartbeatFunc(fn func(conn IConnection))
 	// GetDispatchMsg 获取消息分发
-	GetDispatchMsg() func(packet IPacket)
+	GetDispatchMsg() func(conn IConnection, packet IPacket)
 	// SetDispatchMsg 设置消息分发
-	SetDispatchMsg(fn func(packet IPacket))
+	SetDispatchMsg(fn func(conn IConnection, packet IPacket))
 	// GetConnectionManager 获取连接管理器
 	GetConnectionManager() IConnectionManager
 }
@@ -108,6 +108,8 @@ type IClient interface {
 	Restart()
 	// Connection 获取连接
 	Connection() IConnection
+	// SetConnection 设置连接
+	SetConnection(conn IConnection)
 	// OnConnect 获取连接回调
 	OnConnect() func(conn IConnection)
 	// SetOnConnect 设置连接回调
@@ -123,9 +125,9 @@ type IClient interface {
 	// SetHeartbeatFunc 设置心跳函数
 	SetHeartbeatFunc(fn func(conn IConnection))
 	// GetDispatchMsg 获取消息分发函数
-	GetDispatchMsg() func(packet IPacket)
+	GetDispatchMsg() func(conn IConnection, packet IPacket)
 	// SetDispatchMsg 设置消息分发函数
-	SetDispatchMsg(fn func(packet IPacket))
+	SetDispatchMsg(fn func(conn IConnection, packet IPacket))
 	// GetUrl 获取URL
 	GetUrl() *url.URL
 	// SetUrl 设置URL
@@ -146,7 +148,7 @@ type IDispatcher interface {
 	// Register 注册消息
 	Register(id uint32, handler IHandler)
 	// DispatchMsg 分发消息
-	DispatchMsg(packet IPacket)
+	DispatchMsg(conn IConnection, packet IPacket)
 	// Pause 暂停消息
 	Pause(id uint32)
 	// Resume 恢复消息
