@@ -9,9 +9,10 @@ import (
 	"runtime/debug"
 	"sync"
 
-	"github.com/gorilla/websocket"
 	"go_tools/common/network"
 	"go_tools/common/options"
+
+	"github.com/gorilla/websocket"
 )
 
 var (
