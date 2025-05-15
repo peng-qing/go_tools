@@ -81,9 +81,10 @@ func (ltv *LTVDispatcher) DispatchMsg(dealConn network.IConnection, packet netwo
 	}
 	// 开始时间
 	startAt := time.Now().UnixNano()
-	handler.Execute(handler, packet)
+	handler.Execute(dealConn, packet)
+	endAt := time.Now().UnixNano()
 	// 超时处理
-	if time.Now().UnixNano()-startAt > ltv.maxExecuteTime {
+	if endAt-startAt > ltv.maxExecuteTime {
 		slog.Warn("[LTVDispatcher] DispatchMsg handler execute timeout", "header", header)
 	}
 }

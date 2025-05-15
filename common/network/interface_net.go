@@ -50,6 +50,10 @@ type IConnection interface {
 	Send(data []byte) error
 	// SendToQueue 发送数据到队列
 	SendToQueue(data []byte) error
+	// SendPacket 发送数据包
+	SendPacket(packet IPacket) error
+	// SendPacketToQueue 添加数据包到队列
+	SendPacketToQueue(packet IPacket) error
 }
 
 // IConnectionManager 连接管理器

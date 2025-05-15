@@ -181,9 +181,6 @@ func (ltv *LTVServer) listenConn() {
 
 // listenWebsocketConn 监听Websocket连接
 func (ltv *LTVServer) listenWebsocketConn() {
-	ltv.waitGroup.Add(1)
-	defer ltv.waitGroup.Done()
-
 	slog.Info("[LTVServer] listenWebsocketConn", "ServerID", ltv.serverID, "IP", ltv.srvConf.IP,
 		"WsPort", ltv.srvConf.WsPort, "WsPath", ltv.srvConf.WsPath)
 	http.HandleFunc(ltv.srvConf.WsPath, func(w http.ResponseWriter, r *http.Request) {
@@ -217,9 +214,6 @@ func (ltv *LTVServer) listenWebsocketConn() {
 
 // listenTCPConn 监听TCP连接
 func (ltv *LTVServer) listenTCPConn() {
-	ltv.waitGroup.Add(1)
-	defer ltv.waitGroup.Done()
-
 	slog.Info("[LTVServer] listenTCPConn", "ServerID", ltv.serverID, "IP", ltv.srvConf.IP, "Port", ltv.srvConf.Port)
 	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", ltv.srvConf.IP, ltv.srvConf.Port))
 	if err != nil {
@@ -231,15 +225,15 @@ func (ltv *LTVServer) listenTCPConn() {
 		slog.Error("[LTVServer] listenTCPConn listen tcp error", "ServerID", ltv.serverID, "err", err)
 		panic(err)
 	}
-	for {
-		select {
-		case <-ltv.ctx.Done():
-			// 退出
-			if err = tcpListener.Close(); err != nil {
-				slog.Error("[LTVServer] listenTCPConn close listener error", "ServerID", ltv.serverID, "err", err)
+
+	// AcceptTCP 会阻塞协程 单开一个协程处理
+	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				slog.Error("[LTVServer] listenTCPConn panic", "err", err, "stack", debug.Stack())
 			}
-			return
-		default:
+		}()
+		for {
 			if ltv.connM.Count() >= ltv.srvConf.MaxConn {
 				slog.Info("[LTVServer] listenTCPConn session count out of limit", "ServerID", ltv.serverID, "CurCount", ltv.connM.Count())
 				network.AcceptDelay.Delay()
@@ -247,12 +241,14 @@ func (ltv *LTVServer) listenTCPConn() {
 			}
 			tcpConn, err := tcpListener.AcceptTCP()
 			if err != nil {
-				var netErr net.Error
-				if errors.As(err, &netErr) && netErr.Temporary() {
-					continue
+				// 关闭
+				if errors.Is(err, net.ErrClosed) {
+					slog.Info("[LTVServer] listenTCPConn listener closed", "ServerID", ltv.serverID)
+					return
 				}
 				slog.Error("[LTVServer] listenTCPConn accept tcp error", "ServerID", ltv.serverID, "err", err)
-				return
+				network.AcceptDelay.Delay()
+				continue
 			}
 			if err = tcpConn.SetNoDelay(true); err != nil {
 				slog.Error("[LTVServer] listenTCPConn set no delay error", "ServerID", ltv.serverID, "err", err)
@@ -263,6 +259,16 @@ func (ltv *LTVServer) listenTCPConn() {
 			dealConn := newLTVServerConnection(cID, tcpConn, ltv, ltv.srvConf.Connection)
 			dealConn.Start()
 		}
+	}()
+
+	// 监听关闭信号
+	select {
+	case <-ltv.ctx.Done():
+		// 退出
+		if err = tcpListener.Close(); err != nil {
+			slog.Error("[LTVServer] listenTCPConn close listener error", "ServerID", ltv.serverID, "err", err)
+		}
+		return
 	}
 }
 

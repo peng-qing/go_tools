@@ -59,9 +59,10 @@ func (ltv *LTVClient) Close() error {
 	if ltv.ctx != nil && ltv.ctx.Err() == nil {
 		ltv.ctxCancel()
 	}
-	close(ltv.ErrChan)
 	// 等待子协程退出完成
 	ltv.waitGroup.Wait()
+	close(ltv.ErrChan)
+
 	slog.Info("[LTVClient] Close success...", "IP", ltv.cliConf.IP, "Port", ltv.cliConf.Port, "Mode", ltv.cliConf.Mode)
 	return err
 }

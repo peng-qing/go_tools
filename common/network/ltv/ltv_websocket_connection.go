@@ -160,6 +160,43 @@ func (ltv *LTVWebsocketConnection) SendToQueue(data []byte) error {
 	}
 }
 
+// SendPacket 发送数据包
+func (ltv *LTVWebsocketConnection) SendPacket(packet network.IPacket) error {
+	if ltv.isClosed() {
+		slog.Error("[LTVWebsocketConnection] SendPacket conn is closed", "connID", ltv.connID)
+		return errors.New("connection is closed")
+	}
+	if packet == nil {
+		slog.Error("[LTVWebsocketConnection] SendPacket packet is nil", "connID", ltv.connID)
+		return errors.New("packet is nil")
+	}
+	data, err := ltv.protocolCoder.Encode(packet)
+	if err != nil {
+		slog.Error("[LTVWebsocketConnection] SendPacket Encode failed", "connID", ltv.connID, "err", err)
+		return err
+	}
+	// 发送数据
+	return ltv.Send(data)
+}
+
+// SendPacketToQueue 添加数据包到队列
+func (ltv *LTVWebsocketConnection) SendPacketToQueue(packet network.IPacket) error {
+	if ltv.isClosed() {
+		slog.Error("[LTVWebsocketConnection] SendPacketToQueue conn is closed", "connID", ltv.connID)
+		return errors.New("connection is closed")
+	}
+	if packet == nil {
+		slog.Error("[LTVWebsocketConnection] SendPacketToQueue packet is nil", "connID", ltv.connID)
+		return errors.New("packet is nil")
+	}
+	data, err := ltv.protocolCoder.Encode(packet)
+	if err != nil {
+		slog.Error("[LTVWebsocketConnection] SendPacketToQueue Encode failed", "connID", ltv.connID, "err", err)
+		return err
+	}
+	return ltv.SendToQueue(data)
+}
+
 // ===============================================================================
 // 私有接口
 // ===============================================================================
