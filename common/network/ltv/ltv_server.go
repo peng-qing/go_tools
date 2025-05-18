@@ -126,6 +126,16 @@ func (ltv *LTVServer) GetDispatchMsg() func(conn network.IConnection, packet net
 	return ltv.dispatchFunc
 }
 
+// AddTimer 添加定时器
+func (ltv *LTVServer) AddTimer(callback timer.TimeOuter, endTm int64, interval int64) int64 {
+	if callback == nil {
+		slog.Error("[LTVServer] AddTimer register nil callback")
+		return 0
+	}
+	slog.Info("[LTVServer] AddTimer register timer success", "endTm", endTm, "interval", interval)
+	return ltv.timerM.AddTimer(callback, endTm, interval)
+}
+
 // ===============================================================================
 // 私有接口
 // ===============================================================================

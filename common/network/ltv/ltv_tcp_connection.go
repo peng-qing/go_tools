@@ -78,6 +78,8 @@ func (ltv *LTVTCPConnection) Close() error {
 		ltv.connM.RemoveByConnectionID(ltv.connID)
 	}
 
+	slog.Info("[LTVTCPConnection] Close success", "connID", ltv.connID, "side", ltv.side)
+
 	return nil
 }
 
@@ -237,6 +239,7 @@ func (ltv *LTVTCPConnection) run() {
 			if err := recover(); err != nil {
 				slog.Error("[LTVTCPConnection] run read loop panic", "err", err, "stack", debug.Stack())
 			}
+			slog.Info("[LTVTCPConnection run read loop exit")
 		}()
 		ltv.readLoop()
 	}()
@@ -249,6 +252,7 @@ func (ltv *LTVTCPConnection) run() {
 			if err := recover(); err != nil {
 				slog.Error("[LTVTCPConnection] run write loop panic", "err", err, "stack", debug.Stack())
 			}
+			slog.Info("[LTVTCPConnection run write loop exit")
 		}()
 		ltv.writeLoop()
 	}()
@@ -261,6 +265,7 @@ func (ltv *LTVTCPConnection) run() {
 			if err := recover(); err != nil {
 				slog.Error("[LTVTCPConnection] run heartbeat loop panic", "err", err, "stack", debug.Stack())
 			}
+			slog.Info("[LTVTCPConnection run keepalive loop exit")
 		}()
 		ltv.keepalive()
 	}()

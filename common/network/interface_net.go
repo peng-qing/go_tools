@@ -3,6 +3,8 @@ package network
 import (
 	"net"
 	"net/url"
+
+	"go_tools/common/timer"
 )
 
 // IProtocolCoder 网络协议编码器
@@ -100,6 +102,8 @@ type IServer interface {
 	SetDispatchMsg(fn func(conn IConnection, packet IPacket))
 	// GetConnectionManager 获取连接管理器
 	GetConnectionManager() IConnectionManager
+	// AddTimer 添加定时器
+	AddTimer(callback timer.TimeOuter, endTm int64, interval int64) int64
 }
 
 // IClient 客户端接口

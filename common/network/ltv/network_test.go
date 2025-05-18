@@ -2,14 +2,13 @@ package ltv
 
 import (
 	"fmt"
-	"go_tools/common/network"
-	"math/rand"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"testing"
 	"time"
+
+	"go_tools/common/network"
 )
 
 var serverConf = &LTVServerConfig{
@@ -32,24 +31,52 @@ var serverConf = &LTVServerConfig{
 	},
 }
 
+var clientConf = &LTVClientConfig{
+	IP:               "127.0.0.1",
+	Port:             30101,
+	Mode:             1,
+	UsedLittleEndian: true,
+	Connection: &LTVConnectionConfig{
+		Heartbeat:     5000,
+		MaxHeartbeat:  10000,
+		ReadTimeout:   1000,
+		WriteTimeout:  1000,
+		MaxIOReadSize: 1024 * 1024 * 10,
+		SendQueueSize: 100,
+	},
+}
+
+const (
+	Heartbeat = 1 // 心跳包类型
+)
+
+var serverHbCount = 0
+var clientHbCount = 0
+
+//var dispatcher = NewLTVDispatcher(1, 99999, int64(100*time.Millisecond))
+
 func TestServer(t *testing.T) {
+
 	server := NewLTVServer(0, serverConf)
+	// 设置心跳回调
 	server.SetHeartbeatFunc(func(conn network.IConnection) {
-		fmt.Printf("heartbeat func called, connID:%d\n", conn.GetConnectionID())
-		// 回一个心跳
-		err := conn.SendToQueue([]byte("心跳回包"))
-		if err != nil {
-			return
+		fmt.Printf("[Server] heartbeat func called, connID:%d\n", conn.GetConnectionID())
+		hbMsg := make([]byte, 0)
+		serverHbCount++
+		hbPacket := NewLTVPacket(Heartbeat, fmt.Appendf(hbMsg, "第 %d 次心跳", serverHbCount))
+		if err := conn.SendPacketToQueue(hbPacket); err != nil {
+			fmt.Println("[Server] send heartbeat packet failed, err: ", err)
 		}
 	})
+	// 设置消息处理回调
 	server.SetDispatchMsg(func(conn network.IConnection, packet network.IPacket) {
-		fmt.Printf("dispatch msg called, packet:%s\n", string(packet.GetData()))
+		fmt.Printf("[Server] dispatch msg called, packet:%s\n", string(packet.GetData()))
 	})
 	server.SetOnConnect(func(conn network.IConnection) {
-		fmt.Printf("on connect called, connID:%d\n", conn.GetConnectionID())
+		fmt.Printf("[Server] on connect called, connID:%d\n", conn.GetConnectionID())
 	})
 	server.SetOnDisconnect(func(conn network.IConnection) {
-		fmt.Printf("on disconnect called, connID:%d\n", conn.GetConnectionID())
+		fmt.Printf("[Server] on disconnect called, connID:%d\n", conn.GetConnectionID())
 	})
 
 	server.Serve()
@@ -59,36 +86,44 @@ func TestServer(t *testing.T) {
 	select {
 	case <-c:
 		server.Close()
-		time.Sleep(1 * time.Second)
+		break
 	}
+
+	time.Sleep(1 * time.Second)
+	fmt.Println("[Server] exit success.....")
 }
 
 func TestClient(t *testing.T) {
-	conn, err := net.Dial("tcp", "127.0.0.1:30101")
-	if err != nil {
-		fmt.Println("client dial failed, err: ", err)
-		return
+	client := NewLTVClient(clientConf)
+	client.SetOnConnect(func(conn network.IConnection) {
+		fmt.Println("[Client] on connect called")
+	})
+	client.SetOnDisconnect(func(conn network.IConnection) {
+		fmt.Println("[Client] on disconnect called")
+	})
+	client.SetHeartbeatFunc(func(conn network.IConnection) {
+		fmt.Println("[Client] heartbeat func called")
+		hbMsg := make([]byte, 0)
+		clientHbCount++
+		hbPacket := NewLTVPacket(Heartbeat, fmt.Appendf(hbMsg, "第 %d 次心跳", clientHbCount))
+		if err := conn.SendPacketToQueue(hbPacket); err != nil {
+			fmt.Println("[Client] send heartbeat packet failed, err: ", err)
+		}
+	})
+	client.SetDispatchMsg(func(conn network.IConnection, packet network.IPacket) {
+		fmt.Printf("[Client] dispatch msg called, packet:%s\n", string(packet.GetData()))
+	})
+
+	client.Start()
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+	select {
+	case <-c:
+		client.Close()
+		break
 	}
-	protocolCoder := NewLTVProtocolCoder(serverConf.UsedLittleEndian)
-	for {
-		sec := rand.Int63() % serverConf.Connection.MaxHeartbeat
-		time.Sleep(time.Duration(sec) * time.Millisecond)
-		packet := NewLTVPacket(1, []byte("测试发包"))
-		data, err := protocolCoder.Encode(packet)
-		if err != nil {
-			fmt.Printf("protocol encode packet failed")
-		}
-		_, err = conn.Write(data)
-		if err != nil {
-			fmt.Println("client write failed, err: ", err)
-			return
-		}
-		buf := make([]byte, 10240)
-		n, err := conn.Read(buf)
-		if err != nil {
-			fmt.Println("client read failed, err: ", err)
-			return
-		}
-		fmt.Println("client read: ", string(buf[:n]))
-	}
+
+	time.Sleep(1 * time.Second)
+	fmt.Println("[Client] exit success.....")
 }
