@@ -63,6 +63,7 @@ func (ltv *LTVTCPConnection) Close() error {
 		ltv.ctxCancel()
 	}
 
+	// TODO 待调整 当前存在推出异常问题 由于 Close 会 Wait 相关协程退出 但是在相关协程中又调用了 Close...
 	// 等待相关子协程退出
 	ltv.wg.Wait()
 
