@@ -36,6 +36,7 @@ type LTVWebsocketConnection struct {
 	connConf       *LTVConnectionConfig                                   // 连接配置
 	lastActiveTime time.Time                                              // 最后活动时间
 	lock           sync.Mutex                                             // 锁
+	wg             sync.WaitGroup                                         // 等待组
 }
 
 // ===============================================================================
@@ -228,10 +229,9 @@ func (ltv *LTVWebsocketConnection) run() {
 	// 更新活跃时间
 	ltv.updateLastActiveTime()
 	// 启动读写循环
-	wg := sync.WaitGroup{}
-	wg.Add(1)
+	ltv.wg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer ltv.wg.Done()
 		defer func() {
 			if err := recover(); err != nil {
 				slog.Error("[LTVWebsocketConnection] run read loop panic", "err", err, "stack", debug.Stack())
@@ -240,9 +240,9 @@ func (ltv *LTVWebsocketConnection) run() {
 		ltv.readLoop()
 	}()
 
-	wg.Add(1)
+	ltv.wg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer ltv.wg.Done()
 		defer func() {
 			if err := recover(); err != nil {
 				slog.Error("[LTVWebsocketConnection] run write loop panic", "err", err, "stack", debug.Stack())
@@ -251,9 +251,9 @@ func (ltv *LTVWebsocketConnection) run() {
 		ltv.writeLoop()
 	}()
 
-	wg.Add(1)
+	ltv.wg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer ltv.wg.Done()
 		defer func() {
 			if err := recover(); err != nil {
 				slog.Error("[LTVWebsocketConnection] run heartbeat loop panic", "err", err, "stack", debug.Stack())
@@ -262,7 +262,12 @@ func (ltv *LTVWebsocketConnection) run() {
 		ltv.keepalive()
 	}()
 
-	wg.Wait()
+	// 监听关闭信号
+	select {
+	case <-ltv.ctx.Done():
+		ltv.finalizer()
+		return
+	}
 }
 
 // updateLastActiveTime 更新活跃时间
@@ -379,6 +384,26 @@ func (ltv *LTVWebsocketConnection) keepalive() {
 	}
 }
 
+// finalizer 销毁
+func (ltv *LTVWebsocketConnection) finalizer() {
+	// 等待相关子协程退出
+	ltv.wg.Wait()
+
+	// 执行回调
+	ltv.callOnDisconnect()
+	// 关闭连接
+	if err := ltv.rwc.Close(); err != nil {
+		slog.Error("[LTVWebsocketConnection] Close rwc conn failed", "connID", ltv.connID, "err", err)
+	}
+
+	// 移除连接管理
+	if ltv.side == NodeSide_Server && ltv.connM != nil {
+		ltv.connM.RemoveByConnectionID(ltv.connID)
+	}
+
+	slog.Info("[LTVWebsocketConnection] finalizer success", "connID", ltv.connID, "side", ltv.side)
+}
+
 // ===============================================================================
 // 实例化接口
 // ===============================================================================
@@ -398,6 +423,7 @@ func newLTVServerWebsocketConnection(connID uint64, conn *websocket.Conn, server
 		protocolCoder: server.ProtocolCoder(),
 		dispatchFunc:  server.GetDispatchMsg(),
 		lock:          sync.Mutex{},
+		wg:            sync.WaitGroup{},
 	}
 
 	// 注册到连接管理器
@@ -420,6 +446,7 @@ func newLTVClientWebsocketConnection(client network.IClient, conn *websocket.Con
 		dispatchFunc:  client.GetDispatchMsg(),
 		connConf:      connConf,
 		lock:          sync.Mutex{},
+		wg:            sync.WaitGroup{},
 	}
 
 	return instance

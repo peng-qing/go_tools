@@ -63,24 +63,6 @@ func (ltv *LTVTCPConnection) Close() error {
 		ltv.ctxCancel()
 	}
 
-	// TODO 待调整 当前存在推出异常问题 由于 Close 会 Wait 相关协程退出 但是在相关协程中又调用了 Close...
-	// 等待相关子协程退出
-	ltv.wg.Wait()
-
-	// 执行回调
-	ltv.callOnDisConnect()
-	// 关闭连接
-	if err := ltv.rwc.Close(); err != nil {
-		slog.Error("[LTVTCPConnection] Close rwc conn failed", "connID", ltv.connID, "err", err)
-	}
-
-	// 移除连接管理
-	if ltv.side == NodeSide_Server && ltv.connM != nil {
-		ltv.connM.RemoveByConnectionID(ltv.connID)
-	}
-
-	slog.Info("[LTVTCPConnection] Close success", "connID", ltv.connID, "side", ltv.side)
-
 	return nil
 }
 
@@ -270,6 +252,13 @@ func (ltv *LTVTCPConnection) run() {
 		}()
 		ltv.keepalive()
 	}()
+
+	// 监听关闭信号
+	select {
+	case <-ltv.ctx.Done():
+		ltv.finalizer()
+		return
+	}
 }
 
 // readLoop 读循环
@@ -403,6 +392,26 @@ func (ltv *LTVTCPConnection) callOnDisConnect() {
 	if ltv.onDisconnect != nil {
 		ltv.onDisconnect(ltv)
 	}
+}
+
+// finalizer 销毁
+func (ltv *LTVTCPConnection) finalizer() {
+	// 等待相关子协程退出
+	ltv.wg.Wait()
+
+	// 执行回调
+	ltv.callOnDisConnect()
+	// 关闭连接
+	if err := ltv.rwc.Close(); err != nil {
+		slog.Error("[LTVTCPConnection] Close rwc conn failed", "connID", ltv.connID, "err", err)
+	}
+
+	// 移除连接管理
+	if ltv.side == NodeSide_Server && ltv.connM != nil {
+		ltv.connM.RemoveByConnectionID(ltv.connID)
+	}
+
+	slog.Info("[LTVTCPConnection] finalizer success", "connID", ltv.connID, "side", ltv.side)
 }
 
 // ===============================================================================
