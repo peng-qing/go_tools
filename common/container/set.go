@@ -43,6 +43,11 @@ func (s *Set[T]) Value() []T {
 	return values
 }
 
+// Push 添加值到集合中
+func (s *Set[T]) Push(val T) {
+	s.data[val] = None{}
+}
+
 // Contains 判断集合是否包含某个值
 func (s *Set[T]) Contains(val T) bool {
 	_, ok := s.data[val]

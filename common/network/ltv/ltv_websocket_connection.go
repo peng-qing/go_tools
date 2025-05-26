@@ -60,16 +60,6 @@ func (ltv *LTVWebsocketConnection) Close() error {
 	if ltv.ctx != nil && ltv.ctxCancel != nil {
 		ltv.ctxCancel()
 	}
-	// 执行回调
-	ltv.callOnDisconnect()
-
-	if err := ltv.rwc.Close(); err != nil {
-		slog.Error("[LTVTCPConnection] close rwc conn failed", "connID", ltv.connID, "err", err)
-	}
-	// 移除连接
-	if ltv.side == NodeSide_Server && ltv.connM != nil {
-		ltv.connM.RemoveByConnectionID(ltv.connID)
-	}
 
 	return nil
 }
