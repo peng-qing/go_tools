@@ -14,9 +14,10 @@ var (
 	userAgent = "go_tools/http_utils"
 
 	// defaultCheckRedirect 默认请求重定向策略
+	// copy from net/http std lib
 	defaultCheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) > 10 {
-			return errors.New("")
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
 		}
 		return nil
 	}
