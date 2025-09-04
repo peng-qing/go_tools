@@ -1,4 +1,4 @@
-module go_tools
+module github.com/peng-qing/go_tools
 
 go 1.24.1
 
