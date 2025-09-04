@@ -1,9 +1,5 @@
 package container
 
-var (
-	_ Container[any] = (*Queue[any])(nil)
-)
-
 const (
 	// 初始化容量
 	initCapacity = 8

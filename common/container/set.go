@@ -2,11 +2,6 @@ package container
 
 import "iter"
 
-var (
-	// 断言 检查实现 Container
-	_ Container[any] = (*Set[any])(nil)
-)
-
 // Set 集合
 type Set[T comparable] struct {
 	data map[T]None
