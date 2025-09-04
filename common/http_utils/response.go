@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"go_tools/common/encode_utils"
+	"github.com/peng-qing/go_tools/common/encode_utils"
 )
 
 var (
