@@ -4,7 +4,7 @@ import (
 	"net"
 	"net/url"
 
-	"go_tools/common/timer"
+	"github.com/peng-qing/go_tools/common/timer"
 )
 
 // IProtocolCoder 网络协议编码器

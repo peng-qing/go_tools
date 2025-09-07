@@ -9,8 +9,8 @@ import (
 	"runtime/debug"
 	"sync"
 
-	"go_tools/common/network"
-	"go_tools/common/options"
+	"github.com/peng-qing/go_tools/common/network"
+	"github.com/peng-qing/go_tools/common/options"
 
 	"github.com/gorilla/websocket"
 )

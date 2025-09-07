@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go_tools/common/network"
-	"go_tools/common/options"
-	"go_tools/common/timer"
+	"github.com/peng-qing/go_tools/common/network"
+	"github.com/peng-qing/go_tools/common/options"
+	"github.com/peng-qing/go_tools/common/timer"
 
 	"github.com/gorilla/websocket"
 )

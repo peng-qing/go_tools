@@ -6,7 +6,7 @@ import (
 	"runtime/debug"
 	"sync/atomic"
 
-	"go_tools/common/container"
+	"github.com/peng-qing/go_tools/common/container"
 )
 
 const (

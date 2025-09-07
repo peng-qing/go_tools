@@ -1,6 +1,6 @@
 package ltv
 
-import "go_tools/common/network"
+import "github.com/peng-qing/go_tools/common/network"
 
 var (
 	// 检查实现 network.IPacket 接口

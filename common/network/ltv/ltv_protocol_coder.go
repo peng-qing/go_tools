@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"go_tools/common/network"
+	"github.com/peng-qing/go_tools/common/network"
 )
 
 const (

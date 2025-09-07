@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"go_tools/common/network"
+	"github.com/peng-qing/go_tools/common/network"
 )
 
 var (
