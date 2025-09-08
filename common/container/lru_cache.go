@@ -171,17 +171,17 @@ func (lru *ShardLruCache[T]) Remove(key string) {
 
 // Lru -2Q 模式
 type LruCache2Q[K comparable, V any] struct {
-	*LruCache[K, V]            // lru 队列
-	fifoQueue       *list.List // fifo 队列
-	cacheTm         int64      // 缓存时间
+	*LruCache[K, V]               // lru 队列
+	fifoQueue       *list.List    // fifo 队列
+	expiration      time.Duration // 缓存时间
 }
 
 // NewLruCache2Q 构造函数
-func NewLruCache2Q[K comparable, V any](capacity int, cacheTm int64) *LruCache2Q[K, V] {
+func NewLruCache2Q[K comparable, V any](capacity int, expiration time.Duration) *LruCache2Q[K, V] {
 	return &LruCache2Q[K, V]{
-		fifoQueue: list.New(),
-		cacheTm:   cacheTm,
-		LruCache:  NewLruCache[K, V](capacity),
+		fifoQueue:  list.New(),
+		expiration: expiration,
+		LruCache:   NewLruCache[K, V](capacity),
 	}
 }
 
@@ -193,7 +193,7 @@ func (lru *LruCache2Q[K, V]) Put(key K, value V) {
 	// 是否在缓存
 	if _, ok := lru.get(key); ok {
 		// 放入lru 队首
-		lru.put(key, value, time.Now().UnixNano()+lru.cacheTm*int64(time.Second))
+		lru.put(key, value, time.Now().Add(lru.expiration).UnixNano())
 		return
 	}
 	// 不在缓存 是否是首次加入缓存
@@ -201,7 +201,7 @@ func (lru *LruCache2Q[K, V]) Put(key K, value V) {
 		if entry, ok := cursor.Value.(*cacheEntry[K, V]); ok {
 			if entry.key == key {
 				// fifo中被二次访问 添加到 lru
-				lru.put(key, value, entry.expireAt+lru.cacheTm*int64(time.Second))
+				lru.put(key, value, entry.expireAt+int64(lru.expiration))
 				// 删除当前
 				lru.fifoQueue.Remove(cursor)
 				return
@@ -217,7 +217,7 @@ func (lru *LruCache2Q[K, V]) Put(key K, value V) {
 	entry := &cacheEntry[K, V]{
 		key:      key,
 		value:    value,
-		expireAt: time.Now().UnixNano() + int64(time.Second)*lru.cacheTm,
+		expireAt: time.Now().Add(lru.expiration).UnixNano(),
 	}
 	lru.fifoQueue.PushFront(entry)
 }
@@ -236,7 +236,7 @@ func (lru *LruCache2Q[K, V]) Get(key K) (val V, ok bool) {
 		if entry, ok := cursor.Value.(*cacheEntry[K, V]); ok {
 			if entry.key == key {
 				// fifo中被二次访问 添加到 lru
-				lru.put(key, entry.value, entry.expireAt+lru.cacheTm*int64(time.Second))
+				lru.put(key, entry.value, entry.expireAt+int64(lru.expiration))
 				// 删除当前
 				lru.fifoQueue.Remove(cursor)
 				return entry.value, true
