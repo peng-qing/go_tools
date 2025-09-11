@@ -62,7 +62,7 @@ func (ltv *LTVConnectionManager) Count() int {
 
 // GetAllConnID 获取所有连接ID
 func (ltv *LTVConnectionManager) GetAllConnID() []uint64 {
-	allConnIds := make([]uint64, ltv.Count())
+	allConnIds := make([]uint64, 0, ltv.Count())
 	ltv.allConn.Range(func(key, value any) bool {
 		allConnIds = append(allConnIds, key.(uint64))
 		return true
@@ -74,7 +74,7 @@ func (ltv *LTVConnectionManager) GetAllConnID() []uint64 {
 func (ltv *LTVConnectionManager) Range(fn func(connId uint64, conn network.IConnection) error) error {
 	var rangeErr error
 	ltv.allConn.Range(func(key, value any) bool {
-		if conn, ok := value.(network.IConnection); !ok {
+		if conn, ok := value.(network.IConnection); ok {
 			if err := fn(key.(uint64), conn); err != nil {
 				rangeErr = errors.Join(err)
 			}

@@ -165,6 +165,7 @@ func (ltv *LTVServer) timerLoop() {
 		select {
 		case <-ltv.ctx.Done():
 			// 退出
+			ltv.ticker.Stop()
 			slog.Info("[LTVServer] timerLoop exit....", "ServerID", ltv.serverID)
 			return
 		case now := <-ltv.ticker.C:
