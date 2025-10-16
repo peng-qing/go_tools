@@ -11,7 +11,6 @@ import (
 	"runtime/pprof"
 	"strings"
 	"text/tabwriter"
-
 	"time"
 )
 
@@ -103,7 +102,8 @@ func (p *ProfileManager) getMemoryStats() string {
 	return memTabBuilder.String()
 }
 
-func (p ProfileManager) ListenProfile(addr string) {
+// ListenProfile 开始监听
+func (p *ProfileManager) ListenProfile(addr string) {
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
