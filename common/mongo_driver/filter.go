@@ -5,7 +5,8 @@ type Filter D
 
 // FilterBuilder 过滤器构建器
 type FilterBuilder struct {
-	fields map[string]Filter
+	fields  map[string]Filter // 字段过滤
+	logical Filter            // 逻辑过滤 比如 $and $or $not $nor 他们和字段的层级是不同的
 }
 
 // NewFilterBuilder 创建一个过滤器构建器
@@ -21,6 +22,7 @@ func (fb *FilterBuilder) Build() Filter {
 	for fieldName, fieldConditions := range fb.fields {
 		filter = append(filter, E{Key: fieldName, Value: fieldConditions})
 	}
+	filter = append(filter, fb.logical...)
 	return filter
 }
 
@@ -132,35 +134,38 @@ func (fb *FilterBuilder) EXISTS(key string, exists bool) *FilterBuilder {
 }
 
 // TYPE 匹配字段类型
-func (fb *FilterBuilder) TYPE(key string, exists bool) *FilterBuilder {
-	return fb.addOperator(key, "$type", exists)
+func (fb *FilterBuilder) TYPE(key string, strType string) *FilterBuilder {
+	return fb.addOperator(key, "$type", strType)
+}
+
+// NOT 非 否定查询 不满足
+func (fb *FilterBuilder) NOT(key string, conditions Filter) *FilterBuilder {
+	if key == "" || len(conditions) <= 0 {
+		return fb
+	}
+	return fb.addOperator(key, "$not", conditions)
 }
 
 // AND 与 都满足
-func (fb *FilterBuilder) AND(filters ...E) *FilterBuilder {
-	return fb.addOperator("$and", "$and", filters)
+func (fb *FilterBuilder) AND(filters ...Filter) *FilterBuilder {
+	if len(filters) > 0 {
+		fb.logical = append(fb.logical, E{Key: "$and", Value: filters})
+	}
+	return fb
 }
 
 // OR 或 任意满足
-func (fb *FilterBuilder) OR(filters ...E) *FilterBuilder {
-	if len(filters) <= 0 {
-		return fb
+func (fb *FilterBuilder) OR(filters ...Filter) *FilterBuilder {
+	if len(filters) > 0 {
+		fb.logical = append(fb.logical, E{Key: "$or", Value: filters})
 	}
-	return fb.addOperator("$or", "$or", filters)
-}
-
-// NOT 非 否定查询
-func (fb *FilterBuilder) NOT(filters ...E) *FilterBuilder {
-	if len(filters) <= 0 {
-		return fb
-	}
-	return fb.addOperator("$not", "$not", filters)
+	return fb
 }
 
 // NOR 都不满足
 func (fb *FilterBuilder) NOR(filters ...Filter) *FilterBuilder {
-	if len(filters) <= 0 {
-		return fb
+	if len(filters) > 0 {
+		fb.logical = append(fb.logical, E{Key: "$nor", Value: filters})
 	}
-	return fb.addOperator("$nor", "$nor", filters)
+	return fb
 }
