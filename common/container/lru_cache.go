@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+const (
+	defaultShardLruCacheBucketCount = 10
+	defaultLruCacheCapacity         = 1000
+)
+
 // 私有化的缓存节点
 type cacheEntry[K comparable, V any] struct {
 	key      K
@@ -24,6 +29,9 @@ type LruCache[K comparable, V any] struct {
 
 // NewLruCache 构造函数
 func NewLruCache[K comparable, V any](capacity int) *LruCache[K, V] {
+	if capacity <= 0 {
+		capacity = defaultLruCacheCapacity
+	}
 	return &LruCache[K, V]{
 		list:     list.New(),
 		indexMap: make(map[K]*list.Element),
@@ -119,6 +127,12 @@ type ShardLruCache[T any] struct {
 
 // NewShardLruCache 构造函数 创建 lru 缓存
 func NewShardLruCache[T any](bucketCnt int, bucketCapacity int, expiration time.Duration) *ShardLruCache[T] {
+	if bucketCnt <= 0 {
+		bucketCnt = defaultShardLruCacheBucketCount
+	}
+	if bucketCapacity <= 0 {
+		bucketCapacity = defaultLruCacheCapacity
+	}
 	c := &ShardLruCache[T]{
 		shards:     make([]*LruCache[string, T], bucketCnt),
 		shardCount: bucketCnt,
@@ -138,13 +152,20 @@ func NewShardLruCache[T any](bucketCnt int, bucketCapacity int, expiration time.
 
 // SetHashFunc 设置哈希函数
 func (lru *ShardLruCache[T]) SetHashFunc(fn func(string) int) {
+	if fn == nil {
+		return
+	}
 	lru.hashFunc = fn
 }
 
 // getShard 获取目标分片
 func (lru *ShardLruCache[T]) getShard(key string) *LruCache[string, T] {
 	shardIndex := lru.hashFunc(key)
-	return lru.shards[shardIndex%lru.shardCount]
+	shardIndex = shardIndex % lru.shardCount
+	if shardIndex < 0 {
+		shardIndex = -shardIndex
+	}
+	return lru.shards[shardIndex]
 }
 
 // Put 添加到缓存
@@ -214,10 +235,14 @@ func (lru *LruCache2Q[K, V]) Put(key K, value V) {
 		lru.fifoQueue.Remove(lru.fifoQueue.Back())
 	}
 	// 加入队首
+	expireAt := int64(0)
+	if lru.expiration > 0 {
+		expireAt = time.Now().Add(lru.expiration).UnixNano()
+	}
 	entry := &cacheEntry[K, V]{
 		key:      key,
 		value:    value,
-		expireAt: time.Now().Add(lru.expiration).UnixNano(),
+		expireAt: expireAt,
 	}
 	lru.fifoQueue.PushFront(entry)
 }
@@ -235,8 +260,16 @@ func (lru *LruCache2Q[K, V]) Get(key K) (val V, ok bool) {
 	for cursor := lru.fifoQueue.Front(); cursor != nil; cursor = cursor.Next() {
 		if entry, ok := cursor.Value.(*cacheEntry[K, V]); ok {
 			if entry.key == key {
+				if entry.expireAt > 0 && time.Now().UnixNano() >= entry.expireAt {
+					lru.fifoQueue.Remove(cursor)
+					return val, false
+				}
+				expireAt := int64(0)
+				if lru.expiration > 0 {
+					expireAt = time.Now().Add(lru.expiration).UnixNano()
+				}
 				// fifo中被二次访问 添加到 lru
-				lru.put(key, entry.value, entry.expireAt+int64(lru.expiration))
+				lru.put(key, entry.value, expireAt)
 				// 删除当前
 				lru.fifoQueue.Remove(cursor)
 				return entry.value, true

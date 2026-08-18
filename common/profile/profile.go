@@ -10,16 +10,18 @@ import (
 	"runtime/debug"
 	"runtime/pprof"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 )
 
 // 性能分析管理器
 type ProfileManager struct {
-	inMemoryAnalysis bool     // 是否内存分析中
-	profileIndex     int      // 文件索引
-	filename         string   // 文件名
-	memoryFile       *os.File // 内存导出文件
+	inMemoryAnalysis bool       // 是否内存分析中
+	profileIndex     int        // 文件索引
+	filename         string     // 文件名
+	memoryFile       *os.File   // 内存导出文件
+	mutex            sync.Mutex // 互斥锁
 }
 
 // NewProfileManager 构造函数
@@ -39,6 +41,9 @@ func (p *ProfileManager) ProcessForceGC(w http.ResponseWriter, r *http.Request) 
 
 // ProcessMemoryAnalysis 开始内存分析
 func (p *ProfileManager) ProcessMemoryAnalysis(w http.ResponseWriter, r *http.Request) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
 	// WEB 界面显示结果 避免重复开启
 	if p.inMemoryAnalysis {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -51,7 +56,13 @@ func (p *ProfileManager) ProcessMemoryAnalysis(w http.ResponseWriter, r *http.Re
 	fmt.Fprintf(w, "pprof memory analysis is start, Try /debug/pprof/memory/stop to stop")
 	// 内存文件导出
 	p.filename = fmt.Sprintf("memory.profile.%s%d", time.Now().Format("2006--01-02"), p.profileIndex)
-	p.memoryFile, _ = os.OpenFile(p.filename, os.O_CREATE|os.O_RDWR, 0644)
+	memoryFile, err := os.OpenFile(p.filename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		p.inMemoryAnalysis = false
+		fmt.Fprintf(w, "generate memory analysis profile failed, err:%v", err)
+		return
+	}
+	p.memoryFile = memoryFile
 	if err := pprof.WriteHeapProfile(p.memoryFile); err != nil {
 		fmt.Fprintf(w, "generate memory analysis profile failed, err:%v", err)
 		return
@@ -60,9 +71,21 @@ func (p *ProfileManager) ProcessMemoryAnalysis(w http.ResponseWriter, r *http.Re
 
 // ProcessMemoryAnalysisStop 停止内存分析
 func (p *ProfileManager) ProcessMemoryAnalysisStop(w http.ResponseWriter, r *http.Request) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	if p.memoryFile == nil {
+		fmt.Fprintf(w, "memory analysis is open running")
+		return
+	}
+
 	p.inMemoryAnalysis = false
 	memStatus := p.getMemoryStats()
-	p.memoryFile.Close()
+	if err := p.memoryFile.Close(); err != nil {
+		fmt.Fprintf(w, "close memory analysis profile file failed, err:%v", err)
+		return
+	}
+	p.memoryFile = nil
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	fmt.Fprintf(w, "memory analtsis is stop, memory trace:\n %s\n, Try /debug/pprof/memory/open start memory analysis", memStatus)
 }

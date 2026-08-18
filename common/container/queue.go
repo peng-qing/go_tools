@@ -69,6 +69,8 @@ func (q *Queue[T]) Pop() (val T) {
 		return
 	}
 	val = q.data[q.begin]
+	var zero T
+	q.data[q.begin] = zero
 	q.begin++
 
 	// 缩容
@@ -93,7 +95,9 @@ func (q *Queue[T]) expend() {
 		newCapacity = q.capacity/4 + q.capacity
 	}
 	newData := make([]T, newCapacity)
+	oldEnd := q.end
 	length := copy(newData, q.data[q.begin:q.end])
+	clear(q.data[length:oldEnd])
 	q.begin = 0
 	q.end = length
 	q.data = newData
