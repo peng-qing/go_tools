@@ -49,6 +49,7 @@ func CreateCollectionBase[T any](nodeName, dbName, tableName string) (*Collectio
 	collection := mongoDBManager.Database(dbName).Collection(tableName)
 
 	return &CollectionBase[T]{
+		NodeName:   nodeName,
 		DBName:     dbName,
 		TableName:  tableName,
 		Collection: collection,
@@ -138,9 +139,6 @@ func (cb *CollectionBase[T]) FindAll(ctx context.Context, filter Filter, opts ..
 		return nil, err
 	}
 	defer cursor.Close(ctx)
-	if cursor.Err() != nil {
-		return nil, cursor.Err()
-	}
 
 	var (
 		results = make([]*T, 0)
@@ -158,6 +156,10 @@ func (cb *CollectionBase[T]) FindAll(ctx context.Context, filter Filter, opts ..
 	//if len(results) <= 0 {
 	//	return nil, ErrNoDocuments
 	//}
+
+	if cursor.Err() != nil {
+		return nil, cursor.Err()
+	}
 
 	return results, nil
 }
@@ -260,7 +262,7 @@ func (cb *CollectionBase[T]) EstimatedDocumentCount(ctx context.Context, opts ..
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	result, err := cb.Collection.EstimatedDocumentCount(ctx)
+	result, err := cb.Collection.EstimatedDocumentCount(ctx, opts...)
 	if err != nil {
 		return 0, err
 	}

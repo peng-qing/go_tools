@@ -131,8 +131,11 @@ func (m *MongoClusterManager) Destroy(ctx context.Context) error {
 
 	m.allNodes.Range(func(key, value interface{}) bool {
 		if mongoDBManager, ok := value.(*MongoDBManager); ok {
+			if mongoDBManager == nil || mongoDBManager.Client() == nil {
+				return true
+			}
 			if err := mongoDBManager.Client().Disconnect(ctx); err != nil {
-				finalErr = errors.Join(err)
+				finalErr = errors.Join(finalErr, err)
 			}
 		}
 		return true
