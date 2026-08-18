@@ -110,6 +110,9 @@ func (s *Session) Request(method string, urlStr string, options *HttpHeader) (*h
 		currentCheckRedirect := s.Client.CheckRedirect
 		currentTimeout := s.Client.Timeout
 		currentTransport := s.Client.Transport
+		if transport, ok := currentTransport.(*http.Transport); ok {
+			s.Client.Transport = transport.Clone()
+		}
 		defer func() {
 			s.Client.CheckRedirect = currentCheckRedirect
 			s.Client.Timeout = currentTimeout
@@ -133,6 +136,7 @@ func (s *Session) Request(method string, urlStr string, options *HttpHeader) (*h
 	if err != nil {
 		return nil, nil, err
 	}
+	defer rowResp.Body.Close()
 
 	// 执行钩子函数
 	for _, hookFn := range s.afterResponseHooks {

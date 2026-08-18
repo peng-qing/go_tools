@@ -26,6 +26,10 @@ type Response struct {
 
 // NewResponse 创建一个响应对象
 func NewResponse(r *http.Response) (*Response, error) {
+	if r == nil || r.Body == nil {
+		return nil, errors.New("response is nil or body is nil")
+	}
+
 	resp := &Response{
 		Response: r,
 		encoding: encode_utils.EncodingUTF8,
@@ -55,16 +59,16 @@ func (r *Response) JSON(v any) error {
 func (r *Response) SetEncoding(e string) error {
 	e = strings.ToUpper(e)
 	if e != r.encoding {
-		r.encoding = e
-		encoder := encode_utils.NewEncoder(e)
-		if encoder == nil {
+		decoder := encode_utils.NewDecoder(e)
+		if decoder == nil {
 			return ErrUnrecognizedEncoding
 		}
-		text, err := encoder.String(r.Text)
+		text, err := decoder.String(string(r.Bytes))
 		if err != nil {
 			return err
 		}
 		r.Text = text
+		r.encoding = e
 	}
 
 	return nil

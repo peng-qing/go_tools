@@ -113,8 +113,8 @@ func (h *HttpHeader) applyRequestOpt(r *http.Request) error {
 
 // applyClientOpt 应用客户端选项
 func (h *HttpHeader) applyClientOpt(client *http.Client) error {
-	if h.AllowRedirect {
-		//  允许重定向 阻止跳转并返回最后一次的响应结果
+	if !h.AllowRedirect {
+		//  禁止重定向 阻止跳转并返回最后一次的响应结果
 		client.CheckRedirect = disableRedirect
 	}
 	//  设置超时时间
@@ -195,40 +195,24 @@ func escapeSymbol(str string) string {
 
 // setQuery 设置查询参数
 func setQuery(r *http.Request, params map[string]string) error {
-	allQuery := make([]byte, 0)
-
+	query := r.URL.Query()
 	for key, value := range params {
-		keyEscaped := url.QueryEscape(key)
-		valEscaped := url.QueryEscape(value)
-
-		allQuery = append(allQuery, '&')
-		allQuery = append(allQuery, keyEscaped...)
-		allQuery = append(allQuery, '=')
-		allQuery = append(allQuery, valEscaped...)
+		query.Set(key, value)
 	}
 
-	// trim first &
-	if r.URL.RawQuery == "" {
-		allQuery = allQuery[1:]
-	}
-
-	r.URL.RawQuery = string(allQuery)
+	r.URL.RawQuery = query.Encode()
 
 	return nil
 }
 
 // setData 设置表单数据
 func setData(r *http.Request, allData map[string]string, chunked bool) error {
-	data := ""
+	data := make(url.Values, len(allData))
 	for key, val := range allData {
-		keyEscaped := url.QueryEscape(key)
-		valEscaped := url.QueryEscape(val)
-
-		data = fmt.Sprintf("%s&%s=%s", data, keyEscaped, valEscaped)
+		data.Set(key, val)
 	}
 
-	data = data[1:]
-	reader := strings.NewReader(data)
+	reader := strings.NewReader(data.Encode())
 	r.Body = io.NopCloser(reader)
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if !chunked {
