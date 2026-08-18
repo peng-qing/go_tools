@@ -7,6 +7,8 @@ import (
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
+
+	"github.com/peng-qing/go_tools/common/container"
 )
 
 var (
@@ -26,7 +28,7 @@ type Job struct {
 	Handler  func(context.Context) error
 }
 
-// 协程池
+// Pool 协程池
 type Pool struct {
 	id       uint64         // 协程池ID
 	status   int32          // 协程池状态
@@ -40,25 +42,31 @@ type Pool struct {
 // @param jobQueueSize 任务队列大小
 // @return *Pool
 func NewPool(capacity int, jobQueueSize int) *Pool {
+	if capacity <= 0 {
+		capacity = 1
+	}
+	if jobQueueSize < 0 {
+		jobQueueSize = 0
+	}
 	pool := &Pool{
 		id:       atomic.AddUint64(&poolIDGenerator, 1),
 		status:   PoolStatusOpen,
 		capacity: capacity,
-		workers:  make([]*worker, 0, capacity),
+		workers:  make([]*worker, capacity),
 		wg:       sync.WaitGroup{},
 	}
 	for i := range capacity {
 		pool.workers[i] = newWorker(pool.id, i, jobQueueSize)
 		pool.wg.Add(1)
-		go func() {
+		go func(w *worker) {
 			defer pool.wg.Done()
 			defer func() {
 				if err := recover(); err != nil {
 					slog.Error("[Pool] process worker panic", slog.Uint64("poolID", pool.id), slog.Int("workerID", i), slog.Any("error", err), slog.String("stack", string(debug.Stack())))
 				}
 			}()
-			pool.workers[i].process()
-		}()
+			w.process()
+		}(pool.workers[i])
 	}
 
 	return pool
@@ -67,19 +75,19 @@ func NewPool(capacity int, jobQueueSize int) *Pool {
 // Close 关闭协程池
 func (p *Pool) Close() {
 	slog.Info("[Pool] Close starting", slog.Uint64("poolID", p.id))
-	if atomic.LoadInt32(&p.status) == PoolStatusClose {
-		// 已经关闭了
+	// 避免多个Close同时关闭
+	if !atomic.CompareAndSwapInt32(&p.status, PoolStatusOpen, PoolStatusClose) {
 		return
 	}
-	atomic.StoreInt32(&p.status, PoolStatusClose)
+
 	for _, worker := range p.workers {
-		close(worker.stopChan)
+		worker.stopChan <- container.None{}
 	}
 	p.wg.Wait()
 	slog.Info("[Pool] Close success", slog.Uint64("poolID", p.id))
 }
 
-// Submit 提交任务
+// Submit 提交任务 不和Close并发调用
 func (p *Pool) Submit(job Job) {
 	if atomic.LoadInt32(&p.status) == PoolStatusClose {
 		slog.Error("[Pool] Submit pool already closed", slog.Uint64("poolID", p.id))

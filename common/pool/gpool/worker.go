@@ -15,11 +15,11 @@ type worker struct {
 }
 
 // newWorker 创建工人
-func newWorker(poolID uint64, workerID int, jobQueeueSize int) *worker {
+func newWorker(poolID uint64, workerID int, jobQueueSize int) *worker {
 	return &worker{
 		poolID:   poolID,
 		workerID: workerID,
-		jobChan:  make(chan Job, jobQueeueSize),
+		jobChan:  make(chan Job, jobQueueSize),
 		stopChan: make(chan container.None),
 	}
 }
@@ -31,9 +31,7 @@ func (w *worker) process() {
 		select {
 		case job := <-w.jobChan:
 			// 正常处理工作队列
-			if err := job.Handler(job.Ctx); err != nil {
-				slog.Error("[worker] process job handler error", slog.Uint64("poolID", w.poolID), slog.Int("workerID", w.workerID), slog.Any("error", err))
-			}
+			w.execute(job)
 		case <-w.stopChan:
 			slog.Info("[worker] process stopping", slog.Uint64("poolID", w.poolID), slog.Int("workerID", w.workerID))
 			// 停止接收新任务
@@ -41,12 +39,26 @@ func (w *worker) process() {
 			close(w.stopChan)
 			// 执行剩余任务
 			for job := range w.jobChan {
-				if err := job.Handler(job.Ctx); err != nil {
-					slog.Error("[worker] process job handler error", slog.Uint64("poolID", w.poolID), slog.Int("workerID", w.workerID), slog.Any("error", err))
-				}
+				w.execute(job)
 			}
 			slog.Info("[worker] process stopped", slog.Uint64("poolID", w.poolID), slog.Int("workerID", w.workerID))
 			return
 		}
+	}
+}
+
+// execute
+func (w *worker) execute(job Job) {
+	defer func() {
+		if err := recover(); err != nil {
+			slog.Error("[worker] execute job panic", slog.Uint64("poolID", w.poolID), slog.Int("workerID", w.workerID), slog.Any("err", err))
+		}
+	}()
+	if job.Handler == nil {
+		slog.Error("[worker] execute handler is nil", slog.Uint64("poolID", w.poolID), slog.Int("workerID", w.workerID))
+		return
+	}
+	if err := job.Handler(job.Ctx); err != nil {
+		slog.Error("[worker] execute job handler error", slog.Uint64("poolID", w.poolID), slog.Int("workerID", w.workerID), slog.Any("error", err))
 	}
 }

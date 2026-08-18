@@ -6,12 +6,21 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 
 	"github.com/peng-qing/go_tools/common/container"
 )
 
+const (
+	// TaskRunnerOpen 开启
+	TaskRunnerOpen = iota
+	// TaskRunnerClosed 关闭
+	TaskRunnerClosed
+)
+
 var (
-	ErrTaskRunnerBusy = errors.New("task runner is busy")
+	ErrTaskRunnerBusy   = errors.New("task runner is busy")
+	ErrTaskRunnerClosed = errors.New("task runner is closed")
 )
 
 type PanicHandler func(ctx context.Context, throwValue any)
@@ -29,6 +38,7 @@ type Task struct {
 type TaskRunner struct {
 	panicHandler func(ctx context.Context, throwValue any) // 异常处理函数
 	limitChan    chan container.None                       // 任务队列
+	status       int32                                     // 状态
 	wg           sync.WaitGroup                            // 等待组
 }
 
@@ -42,6 +52,9 @@ func NewTaskRunner(taskQueueSize int, panicHandler PanicHandler) *TaskRunner {
 			slog.Error("[TaskRunner] panic", "throwValue", throwValue)
 		}
 	}
+	if taskQueueSize <= 0 {
+		taskQueueSize = 1
+	}
 
 	return &TaskRunner{
 		panicHandler: panicHandler,
@@ -50,13 +63,19 @@ func NewTaskRunner(taskQueueSize int, panicHandler PanicHandler) *TaskRunner {
 	}
 }
 
-// Submit 提交任务
+// Submit 提交任务 队列满则阻塞
 func (tr *TaskRunner) Submit(task Task) {
+	if atomic.LoadInt32(&tr.status) == TaskRunnerClosed {
+		return
+	}
 	tr.wg.Add(1)
 	tr.limitChan <- container.None{}
 
 	go func() {
-		defer tr.wg.Done()
+		defer func() {
+			<-tr.limitChan
+			tr.wg.Done()
+		}()
 		defer func() {
 			if err := recover(); err != nil {
 				tr.panicHandler(task.Ctx, err)
@@ -66,8 +85,11 @@ func (tr *TaskRunner) Submit(task Task) {
 	}()
 }
 
-// Submit 提交任务
+// SubmitImmediately 提交任务 队列满立即失败
 func (tr *TaskRunner) SubmitImmediately(task Task) error {
+	if atomic.LoadInt32(&tr.status) == TaskRunnerClosed {
+		return ErrTaskRunnerClosed
+	}
 	tr.wg.Add(1)
 	select {
 	case tr.limitChan <- container.None{}:
@@ -95,6 +117,9 @@ func (tr *TaskRunner) SubmitImmediately(task Task) error {
 
 // Close 关闭任务执行器
 func (tr *TaskRunner) Close() {
+	if !atomic.CompareAndSwapInt32(&tr.status, TaskRunnerOpen, TaskRunnerClosed) {
+		return
+	}
 	close(tr.limitChan)
 	tr.wg.Wait()
 }

@@ -8,6 +8,9 @@ type Pool[T any] struct {
 
 // NewPool 创建一个对象池
 func NewPool[T any](fn func() T) *Pool[T] {
+	if fn == nil {
+		panic("[Pool] NewPool fn is nil")
+	}
 	return &Pool[T]{
 		pool: sync.Pool{
 			New: func() any {
