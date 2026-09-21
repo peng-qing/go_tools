@@ -20,14 +20,8 @@ type tcpReadResult struct {
 }
 
 // newTcpTransportPair 创建仅监听本机回环地址的 TCP 连接对，不需要完整服务端。
-func newTcpTransportPair(t *testing.T, config *TcpTransportConfig) (*TcpTransportImpl, *net.TCPConn) {
+func newTcpTransportPair(t *testing.T, config TcpTransportConfig) (*TcpTransportImpl, *net.TCPConn) {
 	t.Helper()
-	if config.IO == nil {
-		// 测试使用有效的完整配置，避免配置结构调整后因缺少嵌套 IO 配置而触发空指针。
-		configCopy := *config
-		configCopy.IO = &IOConfig{}
-		config = &configCopy
-	}
 
 	listener, err := net.ListenTCP("tcp4", &net.TCPAddr{
 		IP:   net.IPv4(127, 0, 0, 1),
@@ -88,7 +82,7 @@ func newTcpTransportPair(t *testing.T, config *TcpTransportConfig) (*TcpTranspor
 
 // TestTcpTransportWriteAcceptsAllBytes 验证 Write 成功返回时，对端能够收到全部字节。
 func TestTcpTransportWriteAcceptsAllBytes(t *testing.T) {
-	transport, peer := newTcpTransportPair(t, &TcpTransportConfig{})
+	transport, peer := newTcpTransportPair(t, TcpTransportConfig{})
 	expected := bytes.Repeat([]byte("tcp-write-payload-"), 16*1024)
 
 	received := make(chan tcpReadResult, 1)
@@ -121,7 +115,7 @@ func TestTcpTransportWriteAcceptsAllBytes(t *testing.T) {
 // TestTcpTransportCloseUnblocksReadAndWrite 验证主动关闭连接能够解除正在阻塞的 Read 和 Write。
 func TestTcpTransportCloseUnblocksReadAndWrite(t *testing.T) {
 	t.Run("解除阻塞的Read", func(t *testing.T) {
-		transport, _ := newTcpTransportPair(t, &TcpTransportConfig{ReadBufferSize: 64})
+		transport, _ := newTcpTransportPair(t, TcpTransportConfig{ReadBufferSize: 64})
 		result := make(chan error, 1)
 		go func() {
 			_, err := transport.Read()
@@ -151,7 +145,7 @@ func TestTcpTransportCloseUnblocksReadAndWrite(t *testing.T) {
 	})
 
 	t.Run("解除阻塞的Write", func(t *testing.T) {
-		transport, _ := newTcpTransportPair(t, &TcpTransportConfig{})
+		transport, _ := newTcpTransportPair(t, TcpTransportConfig{})
 		if err := transport.conn.SetWriteBuffer(1024); err != nil {
 			t.Fatalf("SetWriteBuffer() error = %v", err)
 		}
@@ -186,7 +180,7 @@ func TestTcpTransportCloseUnblocksReadAndWrite(t *testing.T) {
 
 // TestTcpTransportReadPreservesFinalData 验证对端发送最后一段数据后关闭写端时，数据不会因 EOF 被丢弃。
 func TestTcpTransportReadPreservesFinalData(t *testing.T) {
-	transport, peer := newTcpTransportPair(t, &TcpTransportConfig{ReadBufferSize: 64})
+	transport, peer := newTcpTransportPair(t, TcpTransportConfig{ReadBufferSize: 64})
 	expectedData := []byte("last bytes before EOF")
 
 	peerResult := make(chan error, 1)
@@ -231,9 +225,9 @@ func TestTcpTransportReadPreservesFinalData(t *testing.T) {
 // TestTcpTransportReadResults 验证读取超时、对端 EOF 和主动关闭都有可识别且稳定的结果。
 func TestTcpTransportReadResults(t *testing.T) {
 	t.Run("读取超时", func(t *testing.T) {
-		transport, _ := newTcpTransportPair(t, &TcpTransportConfig{
+		transport, _ := newTcpTransportPair(t, TcpTransportConfig{
 			ReadBufferSize: 64,
-			IO: &IOConfig{
+			IO: IOConfig{
 				ReadTimeout: 30 * time.Millisecond,
 			},
 		})
@@ -252,7 +246,7 @@ func TestTcpTransportReadResults(t *testing.T) {
 	})
 
 	t.Run("对端EOF", func(t *testing.T) {
-		transport, peer := newTcpTransportPair(t, &TcpTransportConfig{ReadBufferSize: 64})
+		transport, peer := newTcpTransportPair(t, TcpTransportConfig{ReadBufferSize: 64})
 		if err := peer.CloseWrite(); err != nil {
 			t.Fatalf("peer.CloseWrite() error = %v", err)
 		}
@@ -270,7 +264,7 @@ func TestTcpTransportReadResults(t *testing.T) {
 	})
 
 	t.Run("主动关闭", func(t *testing.T) {
-		transport, _ := newTcpTransportPair(t, &TcpTransportConfig{ReadBufferSize: 64})
+		transport, _ := newTcpTransportPair(t, TcpTransportConfig{ReadBufferSize: 64})
 		if err := transport.Close(); err != nil {
 			t.Fatalf("Close() error = %v", err)
 		}
@@ -290,9 +284,9 @@ func TestTcpTransportReadResults(t *testing.T) {
 
 // TestTcpListenerDialerBidirectional 验证监听、拨号、地址信息、传输模式以及双向读写。
 func TestTcpListenerDialerBidirectional(t *testing.T) {
-	config := &TcpTransportConfig{
+	config := TcpTransportConfig{
 		ReadBufferSize: 1024,
-		IO:             &IOConfig{},
+		IO:             IOConfig{},
 	}
 	listener, err := NewTcpListener("127.0.0.1:0", config)
 	if err != nil {
@@ -367,7 +361,7 @@ func TestTcpListenerDialerBidirectional(t *testing.T) {
 
 // TestTcpListenerCloseUnblocksAccept 验证关闭监听器能够解除阻塞的 Accept，并且重复关闭结果一致。
 func TestTcpListenerCloseUnblocksAccept(t *testing.T) {
-	listener, err := NewTcpListener("127.0.0.1:0", &TcpTransportConfig{ReadBufferSize: 64})
+	listener, err := NewTcpListener("127.0.0.1:0", TcpTransportConfig{ReadBufferSize: 64})
 	if err != nil {
 		t.Fatalf("NewTcpListener() error = %v", err)
 	}
@@ -406,7 +400,7 @@ func TestTcpDialerCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	transport, err := NewTcpDialer(&TcpTransportConfig{}).Dial(ctx, "127.0.0.1:1")
+	transport, err := NewTcpDialer(TcpTransportConfig{}).Dial(ctx, "127.0.0.1:1")
 	t.Logf("actual: transport=%v, err=%v", transport, err)
 	t.Logf("expected: transport=<nil>, err wraps context.Canceled")
 
@@ -421,7 +415,7 @@ func TestTcpDialerCanceledContext(t *testing.T) {
 
 // TestTcpListenerRejectsInvalidAddress 验证监听地址无效时会明确返回错误。
 func TestTcpListenerRejectsInvalidAddress(t *testing.T) {
-	listener, err := NewTcpListener("invalid-address", &TcpTransportConfig{})
+	listener, err := NewTcpListener("invalid-address", TcpTransportConfig{})
 	t.Logf("actual: listener=%v, err=%v", listener, err)
 	t.Logf("expected: listener=<nil>, err is non-nil")
 
@@ -436,9 +430,9 @@ func TestTcpListenerRejectsInvalidAddress(t *testing.T) {
 
 // TestTcpTransportReadTimeoutRecovery 验证一次读取超时后 deadline 会被清除，后续读取仍可成功。
 func TestTcpTransportReadTimeoutRecovery(t *testing.T) {
-	transport, peer := newTcpTransportPair(t, &TcpTransportConfig{
+	transport, peer := newTcpTransportPair(t, TcpTransportConfig{
 		ReadBufferSize: 64,
-		IO: &IOConfig{
+		IO: IOConfig{
 			ReadTimeout: 30 * time.Millisecond,
 		},
 	})
@@ -474,8 +468,8 @@ func TestTcpTransportReadTimeoutRecovery(t *testing.T) {
 
 // TestTcpTransportWriteTimeoutRecovery 验证写入超时会返回明确错误，并在清除 deadline 后允许后续写入。
 func TestTcpTransportWriteTimeoutRecovery(t *testing.T) {
-	transport, peer := newTcpTransportPair(t, &TcpTransportConfig{
-		IO: &IOConfig{
+	transport, peer := newTcpTransportPair(t, TcpTransportConfig{
+		IO: IOConfig{
 			WriteTimeout: 50 * time.Millisecond,
 		},
 	})
@@ -516,7 +510,7 @@ func TestTcpTransportWriteTimeoutRecovery(t *testing.T) {
 
 // TestTcpTransportConcurrentClose 验证多个 goroutine 同时关闭连接时结果一致且不存在竞态。
 func TestTcpTransportConcurrentClose(t *testing.T) {
-	transport, _ := newTcpTransportPair(t, &TcpTransportConfig{})
+	transport, _ := newTcpTransportPair(t, TcpTransportConfig{})
 	const goroutines = 16
 
 	var waitGroup sync.WaitGroup

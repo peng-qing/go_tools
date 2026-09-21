@@ -130,6 +130,12 @@ func NewWebsocketListener(config *WebsocketListenerConfig) (*WebsocketListenerIm
 			return true
 		}
 	}
+	if config.MaxConcurrentUpgrades <= 0 {
+		config.MaxConcurrentUpgrades = defaultMaxWsConcurrentUpgrades
+	}
+	if config.MaxPendingConnections <= 0 {
+		config.MaxPendingConnections = defaultMaxWsPendingConnections
+	}
 	listener, err := net.Listen("tcp", config.Address)
 	if err != nil {
 		return nil, err
@@ -200,6 +206,10 @@ func (wl *WebsocketListenerImpl) closeWithCause(cause error) error {
 
 // 处理HTTP升级请求
 func (wl *WebsocketListenerImpl) handleUpgrade(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != wl.config.Path {
+		http.NotFound(w, r)
+		return
+	}
 	wl.closeMu.Lock()
 	if wl.closed {
 		wl.closeMu.Unlock()
@@ -228,7 +238,7 @@ func (wl *WebsocketListenerImpl) handleUpgrade(w http.ResponseWriter, r *http.Re
 		return
 	}
 	// 创建传输层实例
-	transport := newWebsocketTransportImpl(conn, wl.config.Transport)
+	transport := newWebsocketTransportImpl(conn, &wl.config.Transport)
 	select {
 	case wl.acceptQueue <- transport:
 	case <-wl.done:

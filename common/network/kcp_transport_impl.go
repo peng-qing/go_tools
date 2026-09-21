@@ -28,11 +28,11 @@ type KcpTransportImpl struct {
 	remoteAddr net.Addr
 	closeOnce  sync.Once
 	closeErr   error
-	config     *KcpTransportConfig
+	config     KcpTransportConfig
 }
 
 // newKcpTransportImpl 创建 KCP 传输层实现实例
-func newKcpTransportImpl(session *kcpgo.UDPSession, config *KcpTransportConfig) (*KcpTransportImpl, error) {
+func newKcpTransportImpl(session *kcpgo.UDPSession, config KcpTransportConfig) (*KcpTransportImpl, error) {
 	// 设置mtu
 	if config.Protocol.MTU > 0 && !session.SetMtu(config.Protocol.MTU) {
 		return nil, fmt.Errorf("network/kcp: third-party library rejected MTU %d", config.Protocol.MTU)
@@ -48,6 +48,9 @@ func newKcpTransportImpl(session *kcpgo.UDPSession, config *KcpTransportConfig) 
 	noCongestion := 0
 	if config.Protocol.NoCongestion {
 		noCongestion = 1
+	}
+	if config.ReadBufferSize <= 0 {
+		config.ReadBufferSize = defaultKCPReadBufferSize
 	}
 	session.SetNoDelay(nodelay, int(config.Protocol.Interval), config.Protocol.FastResend, noCongestion)
 	session.SetACKNoDelay(config.Protocol.AckNoDelay)
@@ -138,14 +141,14 @@ func (kt *KcpTransportImpl) Conv() uint32 {
 
 // KcpListenerImpl 是 KCP 监听器实现
 type KcpListenerImpl struct {
-	listener  *kcpgo.Listener     // 底层KCP监听器
-	config    *KcpTransportConfig // 配置
-	closeOnce sync.Once           // 关闭Once
-	closeErr  error               // 关闭错误
+	listener  *kcpgo.Listener    // 底层KCP监听器
+	config    KcpTransportConfig // 配置
+	closeOnce sync.Once          // 关闭Once
+	closeErr  error              // 关闭错误
 }
 
 // NewKcpListener 创建 KCP 监听器
-func NewKcpListener(address string, config *KcpTransportConfig) (*KcpListenerImpl, error) {
+func NewKcpListener(address string, config KcpTransportConfig) (*KcpListenerImpl, error) {
 	block, err := newBlockCrypt(&config.Encryption)
 	if err != nil {
 		return nil, err
@@ -221,11 +224,11 @@ func (kl *KcpListenerImpl) Close() error {
 
 // KcpDialerImpl 是 KCP 拨号器实现
 type KcpDialerImpl struct {
-	config *KcpTransportConfig
+	config KcpTransportConfig
 }
 
 // NewKcpDialer 创建 KCP 拨号器
-func NewKcpDialer(config *KcpTransportConfig) (*KcpDialerImpl, error) {
+func NewKcpDialer(config KcpTransportConfig) (*KcpDialerImpl, error) {
 	return &KcpDialerImpl{config: config}, nil
 }
 

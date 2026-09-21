@@ -16,25 +16,26 @@ var (
 )
 
 type TcpTransportImpl struct {
-	conn       *net.TCPConn        // 底层网络连接
-	localAddr  net.Addr            // 本地地址
-	remoteAddr net.Addr            // 远程地址
-	closeOnce  sync.Once           // 关闭Once
-	closeErr   error               // 关闭错误
-	config     *TcpTransportConfig // 配置
+	conn       *net.TCPConn       // 底层网络连接
+	localAddr  net.Addr           // 本地地址
+	remoteAddr net.Addr           // 远程地址
+	closeOnce  sync.Once          // 关闭Once
+	closeErr   error              // 关闭错误
+	config     TcpTransportConfig // 配置
 }
 
 // newTcpTransportImpl 创建 TCP 传输层实现实例
-func newTcpTransportImpl(conn *net.TCPConn, config *TcpTransportConfig) (*TcpTransportImpl, error) {
-	if config.KeepAlive != nil {
-		if err := conn.SetKeepAliveConfig(*config.KeepAlive); err != nil {
-			return nil, err
-		}
+func newTcpTransportImpl(conn *net.TCPConn, config TcpTransportConfig) (*TcpTransportImpl, error) {
+	if err := conn.SetKeepAliveConfig(config.KeepAlive); err != nil {
+		return nil, err
 	}
 	if config.NoDelay {
 		if err := conn.SetNoDelay(true); err != nil {
 			return nil, err
 		}
+	}
+	if config.ReadBufferSize <= 0 {
+		config.ReadBufferSize = defaultTCPReadBufferSize
 	}
 	return &TcpTransportImpl{
 		conn:       conn,
@@ -111,14 +112,14 @@ func (t *TcpTransportImpl) RemoteAddr() net.Addr { return t.remoteAddr }
 
 // TcpListenerImpl 是TCP监听器的实现
 type TcpListenerImpl struct {
-	listener  *net.TCPListener    // 底层TCP监听器
-	closeOnce sync.Once           // 关闭Once
-	closeErr  error               // 关闭错误
-	config    *TcpTransportConfig // 配置
+	listener  *net.TCPListener   // 底层TCP监听器
+	closeOnce sync.Once          // 关闭Once
+	closeErr  error              // 关闭错误
+	config    TcpTransportConfig // 配置
 }
 
 // NewTcpListener 创建TCP监听器
-func NewTcpListener(address string, config *TcpTransportConfig) (*TcpListenerImpl, error) {
+func NewTcpListener(address string, config TcpTransportConfig) (*TcpListenerImpl, error) {
 	addr, err := net.ResolveTCPAddr("tcp", address)
 	if err != nil {
 		return nil, err
@@ -159,12 +160,12 @@ func (l *TcpListenerImpl) ListenerAddr() net.Addr {
 
 // TcpDialerImpl 是TCP拨号器的实现
 type TcpDialerImpl struct {
-	dialer net.Dialer          // 底层TCP拨号器
-	config *TcpTransportConfig // 配置
+	dialer net.Dialer         // 底层TCP拨号器
+	config TcpTransportConfig // 配置
 }
 
 // NewTcpDialer 创建TCP拨号器
-func NewTcpDialer(config *TcpTransportConfig) *TcpDialerImpl {
+func NewTcpDialer(config TcpTransportConfig) *TcpDialerImpl {
 	return &TcpDialerImpl{config: config}
 }
 

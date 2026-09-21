@@ -27,11 +27,11 @@ type websocketAcceptResult struct {
 // newWebsocketTestConfig 创建字段完整的测试配置，避免嵌套配置为空影响测试目标。
 func newWebsocketTestConfig() *WebsocketTransportConfig {
 	return &WebsocketTransportConfig{
-		IO:              &IOConfig{},
+		IO:              IOConfig{},
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 		MaxMessageSize:  1 << 20,
-		Handshake: &WebsocketHandshakeConfig{
+		Handshake: WebsocketHandshakeConfig{
 			Timeout: time.Second,
 		},
 	}
@@ -43,7 +43,7 @@ func newWebsocketTransportPair(t *testing.T, config *WebsocketTransportConfig) (
 	listener, err := NewWebsocketListener(&WebsocketListenerConfig{
 		Address:               "127.0.0.1:8080",
 		Path:                  "/transport",
-		Transport:             config,
+		Transport:             *config,
 		MaxPendingConnections: 4,
 		MaxConcurrentUpgrades: 4,
 		MaxHeaderBytes:        4096,
@@ -333,7 +333,7 @@ func TestWebsocketListenerCloseUnblocksAccept(t *testing.T) {
 	config := newWebsocketTestConfig()
 	listener, err := NewWebsocketListener(&WebsocketListenerConfig{
 		Address:               "127.0.0.1:0",
-		Transport:             config,
+		Transport:             *config,
 		MaxPendingConnections: 1,
 		MaxConcurrentUpgrades: 1,
 		MaxHeaderBytes:        4096,
@@ -408,7 +408,7 @@ func TestWebsocketListenerRejectsWrongPath(t *testing.T) {
 	listener, err := NewWebsocketListener(&WebsocketListenerConfig{
 		Address:               "127.0.0.1:0",
 		Path:                  "/correct",
-		Transport:             config,
+		Transport:             *config,
 		MaxPendingConnections: 1,
 		MaxConcurrentUpgrades: 1,
 		MaxHeaderBytes:        4096,
@@ -451,7 +451,7 @@ func wsAwait[T any](t *testing.T, ch <-chan T) T {
 func wsReviewListener(t *testing.T) *WebsocketListenerImpl {
 	t.Helper()
 	l, err := NewWebsocketListener(&WebsocketListenerConfig{
-		Address: "127.0.0.1:0", Path: "/allowed", Transport: newWebsocketTestConfig(),
+		Address: "127.0.0.1:0", Path: "/allowed", Transport: *newWebsocketTestConfig(),
 		MaxPendingConnections: 1,
 		MaxConcurrentUpgrades: 1,
 		MaxHeaderBytes:        4096,

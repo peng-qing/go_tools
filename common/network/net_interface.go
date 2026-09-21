@@ -7,7 +7,10 @@ import (
 
 // Codec 是网络协议的编解码器，用于将数据包转换为字节流和从字节流转换为数据包。
 type Codec[P any] interface {
-	// Decode 从data前缀解析出一个Packet，并返回解析出的字节数和错误。
+	// Decode 从data前缀解析出一个Packet，并返回解析出的字节数和错误
+	// 数据不足：packet=nil, consumed=0, err=nil
+	// 解码成功：packet!=nil, 0 < consumed <= len(data), err=nil
+	// 数据非法：err!=nil
 	Decode(data []byte) (packet P, consumed int, err error)
 	// Encode 将一个Packet编码为字节流
 	Encode(packet P) ([]byte, error)

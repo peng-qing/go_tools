@@ -28,14 +28,14 @@ func kcpAwait[T any](t *testing.T, ch <-chan T) T {
 }
 
 // kcpConfig 使用显式完整配置，不依赖尚未定义的默认值策略。
-func kcpConfig() *KcpTransportConfig {
-	return &KcpTransportConfig{
-		ReadBufferSize: 4096, IO: &IOConfig{ReadTimeout: time.Second, WriteTimeout: time.Second},
+func kcpConfig() KcpTransportConfig {
+	return KcpTransportConfig{
+		ReadBufferSize: 4096, IO: IOConfig{ReadTimeout: time.Second, WriteTimeout: time.Second},
 		Protocol: KcpProtocolConfig{MTU: 1200, SendWindow: 128, ReceiveWindow: 128, NoDelay: true, Interval: 10, FastResend: 2, NoCongestion: true, AckNoDelay: true},
 	}
 }
 
-func kcpListen(t *testing.T, cfg *KcpTransportConfig) *KcpListenerImpl {
+func kcpListen(t *testing.T, cfg KcpTransportConfig) *KcpListenerImpl {
 	t.Helper()
 	l, e := NewKcpListener("127.0.0.1:0", cfg)
 	if e != nil {
@@ -44,7 +44,7 @@ func kcpListen(t *testing.T, cfg *KcpTransportConfig) *KcpListenerImpl {
 	t.Cleanup(func() { _ = l.Close() })
 	return l
 }
-func kcpDial(t *testing.T, cfg *KcpTransportConfig, address string) *KcpTransportImpl {
+func kcpDial(t *testing.T, cfg KcpTransportConfig, address string) *KcpTransportImpl {
 	t.Helper()
 	d, e := NewKcpDialer(cfg)
 	if e != nil {
@@ -79,7 +79,7 @@ func kcpAccept(t *testing.T, l *KcpListenerImpl) Transport {
 }
 
 // kcpPair 必须先发送首包再 Accept；KCP 不执行 TCP 式连接握手。
-func kcpPair(t *testing.T, cfg *KcpTransportConfig) (*KcpTransportImpl, *KcpTransportImpl) {
+func kcpPair(t *testing.T, cfg KcpTransportConfig) (*KcpTransportImpl, *KcpTransportImpl) {
 	t.Helper()
 	l := kcpListen(t, cfg)
 	c := kcpDial(t, cfg, l.ListenerAddr().String())
@@ -251,7 +251,7 @@ func TestKcpReadTimeoutRecovery(t *testing.T) {
 }
 
 // kcpBlackhole 使用真实 UDP 接收地址但不应答，使发送窗口稳定填满。
-func kcpBlackhole(t *testing.T, cfg *KcpTransportConfig) *KcpTransportImpl {
+func kcpBlackhole(t *testing.T, cfg KcpTransportConfig) *KcpTransportImpl {
 	t.Helper()
 	sink, e := net.ListenPacket("udp4", "127.0.0.1:0")
 	if e != nil {
@@ -315,7 +315,7 @@ func TestKcpWriteBackpressure(t *testing.T) {
 // TestKcpConcurrentClose 验证并发及重复关闭幂等，阻塞读取解除，关闭后非空写入失败。
 func TestKcpConcurrentClose(t *testing.T) {
 	cfg := kcpConfig()
-	cfg.IO = &IOConfig{}
+	cfg.IO = IOConfig{}
 	c, _ := kcpPair(t, cfg)
 	reads := make(chan error, 1)
 	go func() { _, e := c.Read(); reads <- e }()
@@ -648,9 +648,9 @@ func TestKcpSiblingSessionIsolation(t *testing.T) {
 func TestKcpReadNoProgress(t *testing.T) {
 	c, s := kcpPair(t, kcpConfig())
 	// 创建配置副本，避免修改连接对共同持有的配置。
-	cfg := *c.config
+	cfg := c.config
 	cfg.ReadBufferSize = 0
-	c.config = &cfg
+	c.config = cfg
 	if e := s.Write([]byte("pending")); e != nil {
 		t.Fatal(e)
 	}

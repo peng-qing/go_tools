@@ -18,10 +18,10 @@ type IOConfig struct {
 
 // TcpTransportConfig 是 TCP 传输层配置
 type TcpTransportConfig struct {
-	ReadBufferSize int                  // 单次 Read 分配的接收缓冲区大小
-	IO             *IOConfig            // 输入输出配置
-	KeepAlive      *net.KeepAliveConfig // 内核 TCP 探测配置，不承载业务心跳数据
-	NoDelay        bool                 // 是否关闭 Nagle 算法
+	ReadBufferSize int                 // 单次 Read 分配的接收缓冲区大小
+	NoDelay        bool                // 是否关闭 Nagle 算法
+	IO             IOConfig            // 输入输出配置
+	KeepAlive      net.KeepAliveConfig // 内核 TCP 探测配置，不承载业务心跳数据
 }
 
 // =========================================================
@@ -36,22 +36,22 @@ type WebsocketHandshakeConfig struct {
 
 // WebsocketTransportConfig 是 WebSocket 传输层配置
 type WebsocketTransportConfig struct {
-	IO              *IOConfig                 // 输入输出配置
-	ReadBufferSize  int                       // ws 握手后使用的读缓冲区大小
-	WriteBufferSize int                       // ws 握手后使用的写缓冲区大小
-	MaxMessageSize  int64                     // 单个 WebSocket Message 允许读取的最大字节数
-	Handshake       *WebsocketHandshakeConfig // 握手配置
+	ReadBufferSize  int                      // ws 握手后使用的读缓冲区大小
+	WriteBufferSize int                      // ws 握手后使用的写缓冲区大小
+	MaxMessageSize  int64                    // 单个 WebSocket Message 允许读取的最大字节数
+	IO              IOConfig                 // 输入输出配置
+	Handshake       WebsocketHandshakeConfig // 握手配置
 }
 
 // WebsocketListenerConfig 是 WebSocket 监听器配置
 type WebsocketListenerConfig struct {
-	Address               string                    // websocket 监听地址
-	Path                  string                    // 允许 Upgrade 的 HTTP 路径，空值会归一化为 "/"
-	Transport             *WebsocketTransportConfig // 传输层配置
-	MaxPendingConnections int                       // Upgrade 完成、尚未被 Accept 取走的连接上限
-	MaxConcurrentUpgrades int                       // 同时执行 WebSocket Upgrade 的请求上限
-	MaxHeaderBytes        int                       // 限制 HTTP Upgrade 请求头，避免在协议升级前消耗无界内存。
-	CheckOrigin           func(*http.Request) bool  // 检查请求 Origin
+	Address               string                   // websocket 监听地址
+	Path                  string                   // 允许 Upgrade 的 HTTP 路径，空值会归一化为 "/"
+	MaxPendingConnections int                      // Upgrade 完成、尚未被 Accept 取走的连接上限
+	MaxConcurrentUpgrades int                      // 同时执行 WebSocket Upgrade 的请求上限
+	MaxHeaderBytes        int                      // 限制 HTTP Upgrade 请求头，避免在协议升级前消耗无界内存。
+	Transport             WebsocketTransportConfig // 传输层配置
+	CheckOrigin           func(*http.Request) bool // 检查请求 Origin
 }
 
 // =========================================================
@@ -100,7 +100,7 @@ type KcpEncryptionConfig struct {
 
 // KcpTransportConfig 是 KCP 传输层配置
 type KcpTransportConfig struct {
-	IO             *IOConfig           // 输入输出配置
+	IO             IOConfig            // 输入输出配置
 	ReadBufferSize int                 // 单次 Read 分配的接收缓冲区大小
 	Protocol       KcpProtocolConfig   // KCP 协议配置
 	FEC            KcpFECConfig        // KCP FEC 配置
