@@ -24,8 +24,7 @@ go get github.com/peng-qing/go_tools
 | [encode_utils](common/encode_utils/README.md) | 文本编码与解码 |
 | [http_utils](common/http_utils/README.md) | HTTP 请求与响应 |
 | [mongo_driver](common/mongo_driver/README.md) | MongoDB 连接与 CRUD |
-| [network](common/network/README.md) | 网络抽象接口与统计 |
-| [network/ltv](common/network/ltv/README.md) | LTV TCP/WebSocket 实现 |
+| [network](common/network/README.md) | TCP/KCP/WebSocket、泛型连接、依赖工厂、心跳与流量统计 |
 | [options](common/options/README.md) | 泛型函数式选项 |
 | [pool](common/pool/README.md) | 对象池与缓冲池 |
 | [pool/gpool](common/pool/gpool/README.md) | 协程任务池 |
@@ -33,6 +32,15 @@ go get github.com/peng-qing/go_tools
 | [timer](common/timer/README.md) | 最小堆定时器 |
 
 具体 API、示例和注意事项请进入对应模块的 README 查看。
+
+## 网络通信
+
+[network 使用文档](common/network/README.md) 说明了接口与结构关系、生命周期、配置和业务接入方式，并提供可运行的 TCP Server/Client 示例。
+
+- 业务提供消息类型和 Codec，通过 Receiver 接收消息；OnOpen/OnClose 回调按需提供。心跳可通过业务实现并注入 Heartbeator 交给 Conn 托管，也可不注入而由业务自行维护。
+- Server 使用依赖工厂，支持共享组件或每连接独立业务会话；Client 管理单次连接，重连由上层控制。
+- TCP、KCP、WebSocket 共用消息级接口，支持连接容量限制、应用层心跳和每连接流量统计。
+
 
 ## 开发与测试
 
