@@ -3,15 +3,8 @@ package network
 import "errors"
 
 var (
-	// ErrClosed 表示资源已经完成关闭，不能再提供能力。
-	ErrClosed = errors.New("network: closed")
-	// ErrPacketTooLarge 表示出站编码结果超过限制
-	ErrPacketTooLarge = errors.New("network: packet too large")
-	// ErrMalformedPacket 表示解码后的包不合法
-	ErrMalformedPacket = errors.New("network: malformed packet")
-
-	// ErrConnectionExists 表示连接已经存在
-	ErrConnectionExists = errors.New("network: connection already exists")
-	// ErrAlreadyStarted 表示连接已经启动
-	ErrAlreadyStarted = errors.New("network: already started")
+	ErrSendQueueFull       = errors.New("network: send queue is full")                // 发送队列已满
+	ErrHeartbeatTimeout    = errors.New("network: heartbeat timeout")                 // 心跳超时
+	ErrSessionIdExists     = errors.New("network: register session id already exist") // session id 已经注册
+	ErrSessionLimitReached = errors.New("network: session limit reached")             // session 数量达到限制
 )

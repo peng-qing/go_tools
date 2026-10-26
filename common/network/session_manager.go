@@ -1,64 +1,118 @@
 package network
 
 import (
-	"maps"
-	"slices"
+	"errors"
+	"net"
 	"sync"
 )
 
-// SessionManager 管理所有连接
-type SessionManager[P any] struct {
-	allConns map[uint64]Connection[P] // 所有连接
-	mu       sync.RWMutex             // 读写锁
+var (
+	_ SessionManager[any] = (*SessionManagerImpl[any])(nil)
+)
+
+// SessionManagerImpl 管理连接登记与关闭
+type SessionManagerImpl[P any] struct {
+	conns     map[uint64]Connection[P] // 连接表
+	maxConns  int                      // 最大连接数限制 <=0 表示不额外限制
+	closed    bool                     // 关闭标记
+	lock      sync.RWMutex             // 锁 保护连接表和关闭
+	closeOnce sync.Once                // 保证只关闭一次
+	closeErr  error                    // 关闭错误
 }
 
-// NewSessionManager 创建一个新的 SessionManager
-func NewSessionManager[P any]() *SessionManager[P] {
-	return &SessionManager[P]{allConns: make(map[uint64]Connection[P])}
+// NewSessionManager 构造函数
+func NewSessionManager[P any](maxConns int) *SessionManagerImpl[P] {
+	return &SessionManagerImpl[P]{
+		conns:    make(map[uint64]Connection[P]),
+		maxConns: maxConns,
+	}
 }
 
-// add 添加一个连接到 SessionManager
-func (s *SessionManager[P]) add(conn Connection[P]) error {
+// Add 登记连接
+func (s *SessionManagerImpl[P]) Add(conn Connection[P]) error {
+	if conn == nil {
+		return errors.New("network/session: connections is nil")
+	}
 	id := conn.ID()
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
-	if _, exists := s.allConns[id]; exists {
-		return ErrConnectionExists
+	if s.closed {
+		return net.ErrClosed
 	}
-
-	if s.allConns == nil {
-		s.allConns = make(map[uint64]Connection[P])
+	if _, ok := s.conns[id]; ok {
+		return ErrSessionIdExists
 	}
-
-	s.allConns[id] = conn
+	if s.maxConns > 0 && len(s.conns) >= s.maxConns {
+		return ErrSessionLimitReached
+	}
+	s.conns[id] = conn
 	return nil
 }
 
-// remove 从 SessionManager 中移除一个连接
-func (s *SessionManager[P]) remove(id uint64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.allConns, id)
+// Remove 注销连接登记
+func (s *SessionManagerImpl[P]) Remove(id uint64) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	delete(s.conns, id)
 }
 
-// Get 返回瞬时引用，未找到时返回 nil；返回后连接可能立即关闭。
-func (s *SessionManager[P]) Get(id uint64) Connection[P] {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.allConns[id]
+// Get 获取已登记的连接
+func (s *SessionManagerImpl[P]) Get(id uint64) (Connection[P], bool) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	conn, ok := s.conns[id]
+	return conn, ok
 }
 
-// Count 返回当前连接数
-func (s *SessionManager[P]) Count() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return len(s.allConns)
+// Range 遍历连接快照，回调期间不持锁
+func (s *SessionManagerImpl[P]) Range(fn func(Connection[P]) bool) {
+	if fn == nil {
+		return
+	}
+
+	s.lock.RLock()
+	conns := make([]Connection[P], 0, len(s.conns))
+	for _, conn := range s.conns {
+		conns = append(conns, conn)
+	}
+	s.lock.RUnlock()
+
+	for _, conn := range conns {
+		if !fn(conn) {
+			return
+		}
+	}
 }
 
-// Snapshot 返回当前所有连接的快照
-func (s *SessionManager[P]) Snapshot() []Connection[P] {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return slices.AppendSeq(make([]Connection[P], 0, len(s.allConns)), maps.Values(s.allConns))
+// Len 返回当前登记的连接数
+func (s *SessionManagerImpl[P]) Len() int {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return len(s.conns)
+}
+
+// Close 停止登记并关闭已有连接，不等待连接运行及业务回调结束
+func (s *SessionManagerImpl[P]) Close() error {
+	s.closeOnce.Do(func() {
+		s.lock.Lock()
+		s.closed = true
+
+		conns := make([]Connection[P], 0, len(s.conns))
+		for _, conn := range s.conns {
+			conns = append(conns, conn)
+		}
+		s.lock.Unlock()
+
+		// 不持锁关闭，避免阻塞连接查询和注销。
+		for _, conn := range conns {
+			if err := conn.Close(); err != nil {
+				s.closeErr = errors.Join(s.closeErr, err)
+			}
+		}
+	})
+
+	return s.closeErr
 }

@@ -2,111 +2,127 @@ package network
 
 import (
 	"context"
+	"io"
 	"net"
 )
 
-// Codec 是网络协议的编解码器，用于将数据包转换为字节流和从字节流转换为数据包。
+// Codec 编解码器接口 实现不应该有内部状态依赖
 type Codec[P any] interface {
-	// Decode 从data前缀解析出一个Packet，并返回解析出的字节数和错误
-	// 数据不足：packet=nil, consumed=0, err=nil
-	// 解码成功：packet!=nil, 0 < consumed <= len(data), err=nil
-	// 数据非法：err!=nil
-	Decode(data []byte) (packet P, consumed int, err error)
-	// Encode 将一个Packet编码为字节流
+	// Encode 编码业务包为二进制数据
 	Encode(packet P) ([]byte, error)
+	// Decode 从 reader 读取并解码一个完整帧
+	Decode(reader io.Reader) (packet P, err error)
 }
 
-// Transport 统一不同协议的阻塞读写 明确边界和关闭语义
+// Transport 对底层 Socket 的兼容封装，是上层唯一依赖的物理 I/O 接口。
 type Transport interface {
-	// Read 读取数据 返回读取的数据和错误
-	Read() ([]byte, error)
-	// Write 写入数据 返回写入的数据和错误
-	Write(data []byte) error
-	// Close 关闭Transport
+	// Read 读取数据 不保证同向并发安全
+	Read(p []byte) (n int, err error)
+	// Write 写入数据 不保证同向并发安全
+	Write(p []byte) (n int, err error)
+	// Close 关闭连接，可与 Read、Write 并发调用，并使阻塞中的 I/O 退出。
 	Close() error
-	// LocalAddr 返回Transport的本地地址
+	// LocalAddr 本地地址
 	LocalAddr() net.Addr
-	// RemoteAddr 返回Transport的远程地址
+	// RemoteAddr 远端地址
 	RemoteAddr() net.Addr
 }
 
-// Listener 监听器 用于服务端
-type Listener interface {
-	// Accept 接受并返回一个Transport 返回Transport时必须已经达到可供Session使用的状态
-	Accept() (Transport, error)
-	// Addr 返回Listener的地址
-	ListenerAddr() net.Addr
-	// Close 关闭Listener 必须解除阻塞的Accept 需要避免一个对端的可控输入直接终止整个服务
-	Close() error
-}
-
-// Dialer 拨号器 用户客户端
+// Dialer 客户端拨号
 type Dialer interface {
-	// Dial 建立一个客户端性质的Transport
-	// 成功后 Transport 先交给调用方，Session 构造成功后才接管
-	// 失败时 Dialer 必须关闭已经创建的 socket 和临时资源
-	Dial(ctx context.Context, address string) (Transport, error)
+	// DialContext 拨号
+	DialContext(ctx context.Context, address string) (Transport, error)
 }
 
-// Connection 连接 用于表示一个网络连接 是业务可以长期持有的会话能力
-// 不对外暴露底层Session,Transport,Codec,内部goroutine,只提供发送,查询状态和关闭连接的能力
-// 不会绕过队列直接并发写底层socket, 不依赖某个协议的具体连接类型
-type Connection[P any] interface {
-	// ID 返回当前连接的框架标识 只保证所属Server或者Client生命周期内唯一
-	// 重连会新分配ID，不同业务可以产生相同ID
-	ID() uint64
-	// LocalAddr 是建连时保存的地址快照
-	LocalAddr() net.Addr
-	// RemoteAddr 是建连时保存的地址快照
-	RemoteAddr() net.Addr
-	// Send 编码 packet，并允许调用方通过 ctx 限制等待发送队列的时间
-	Send(ctx context.Context, packet P) error
-	// TrySend 不等待队列；队列已满时返回 ErrSendQueueFull。
-	TrySend(packet P) error
-	// Done 在连接资源和生命周期回调完成后关闭
-	Done() <-chan struct{}
-	// Err 返回触发关闭的第一原因；主动 Close 通常返回 nil。
-	Err() error
-	// Close 幂等地发起关闭，它不能代替等待 Done。
+// Listener 服务器监听
+type Listener interface {
+	//Accept 接受一条连接
+	Accept() (Transport, error)
+	// Addr 返回监听地址
+	Addr() net.Addr
+	// 关闭监听器
 	Close() error
 }
 
-// Receiver 接收 Codec 解出的完整消息，是 Network 核心与业务处理的唯一入站边界
-// Session 在单条连接的 readLoop 中同步调用 OnMessage，因此同一连接的消息天然保持解码顺序
-// Receiver 也不需要为了同一连接实现并发安全
-// 优点是顺序和错误归属明确
-// 问题是耗时业务会直接阻塞该连接后续读取
-// 需要并行处理时，Receiver 应把消息投递到业务自己管理的有界 mailbox，不能在这里启动无界 goroutine
+// Connection 连接接口
+type Connection[P any] interface {
+	// ID 连接标识 进程内唯一
+	ID() uint64
+	// Run 阻塞运行 重复调用不重复启动循环
+	Run()
+	// LocalAddr 本地地址
+	LocalAddr() net.Addr
+	// RemoteAddr 远端地址
+	RemoteAddr() net.Addr
+	// Send 编码消息并等待入队, 返回成功不表示对端已收到
+	Send(context.Context, P) error
+	// TrySend 编码消息并尝试入队, 不等待队列空位; 满时返回 ErrSendQueueFull
+	TrySend(P) error
+	// Close 关闭连接 不等待业务回调退出 不承诺排空发送队列
+	Close() error
+	// Err 返回首个终止原因，尚未终止时为 nil。
+	Err() error
+}
+
+// Receiver 网络消息到业务的入站边界
 type Receiver[P any] interface {
-	// OnMessage 在单条连接的 readLoop 中同步调用，因此同一连接的消息天然保持解码顺序
-	// Receiver 也不需要为了同一连接实现并发安全
-	OnMessage(ctx context.Context, conn Connection[P], packet P) error
+	// OnMessage 在读循环中顺序调用，应及时返回并响应 context 取消
+	// 阻塞回调会延迟后续消息和心跳解析 耗时业务由调用方自行调度
+	OnMessage(context.Context, Connection[P], P)
 }
 
-// Observer 接收网络观测事件 不是异步事件总线
-// 所有方法都由网络路径同步调用 必须快速返回,不得阻塞,操作当前连接,不能panic
-// 适合递增指标或者轻量事件投递 不适合执行IO或者业务状态修改
-type Observer interface {
-	// OnOpen 在连接建立时调用
-	OnOpen(id uint64, local, remote net.Addr)
-	// OnRead 在读取数据时调用
-	OnRead(id uint64, bytes int)
-	// OnWrite 在写入数据时调用
-	OnWrite(id uint64, bytes int)
-	// OnDecodeError 在解码数据时发生错误时调用
-	OnDecodeError(id uint64, err error)
-	// OnReceiverError 在接收数据时发生错误时调用
-	OnReceiverError(id uint64, err error)
-	// OnClose 在连接关闭时调用
-	OnClose(id uint64, err error)
+// HeartbeatKind 心跳类型
+type HeartbeatKind uint8
+
+const (
+	HeartbeatKind_Invalid HeartbeatKind = iota // 无效
+	HeartbeatKind_Ping                         // 心跳请求
+	HeartbeatKind_Pong                         // 心跳响应
+)
+
+// Heartbeator 应用层心跳器 实现须保证并发安全且及时返回
+type Heartbeator[P any] interface {
+	// Ping Ping包
+	Ping(seq uint64) P
+	// Pong Pong包
+	Pong(seq uint64) P
+	// Inspect 检查心跳包类型和序列号
+	Inspect(packet P) (kind HeartbeatKind, seq uint64, ok bool)
 }
 
-// SessionLifecycle 只保留业务真正需要的连接可用与最终关闭通知
-type SessionLifecycle[P any] interface {
-	// OnReady 调用时 Session 已加入 Manager、Send 可用，但首包尚未投递给 Receiver
-	OnReady(ctx context.Context, conn Connection[P])
-	// OnClosed 调用时 Session 已从 Manager 摘除
-	// Transport 已关闭，I/O goroutine 已退出且 Session 接收缓存已释放
-	// 它返回后 Done 关闭
-	OnClosed(conn Connection[P], cause error)
+// Session 状态枚举
+type SessionState uint8
+
+const (
+	SessionState_New     SessionState = iota // 创建 尚未启动
+	SessionState_Running                     // 已启动
+	SessionState_Closed                      // 已发起关闭
+)
+
+// SessionManager 规范SessionManager接口 不负责连接的启动和等待结束
+type SessionManager[P any] interface {
+	// Add 登记连接
+	Add(conn Connection[P]) error
+	// Remove 注销连接登记 不关闭连接
+	Remove(id uint64)
+	// Get 获取连接 不保证返回的连接未被并发关闭
+	Get(id uint64) (Connection[P], bool)
+	// Range 遍历接口
+	Range(fn func(Connection[P]) bool)
+	// Len 返回当前登记的连接数
+	Len() int
+	// Close 停止接收登记 并关闭已经登记的连接
+	Close() error
 }
+
+// ConnDependencies 连接依赖注入集
+type ConnDependencies[P any] struct {
+	Codec[P]
+	Receiver[P]
+	Heartbeator[P]
+	OnOpen  func(context.Context, Connection[P]) error
+	OnClose func(Connection[P], error)
+}
+
+// ConnDependenciesFactory 连接依赖构造工厂接口
+type ConnDependenciesFactory[P any] func(Transport) (ConnDependencies[P], error)
