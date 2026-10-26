@@ -36,6 +36,7 @@ type Conn[P any] struct {
 	onOpen         func(context.Context, Connection[P]) error // 连接初始化回调 在读取消息前调用 可发送初始消息
 	onClose        func(Connection[P], error)                 // 连接结束回调 在所有循环退出且底层关闭完成后调用
 	connConf       ConnConfig                                 // 连接配置
+	statistics     TrafficStatistics                          // 当前连接的累计统计
 	ctx            context.Context                            // 连接生命周期
 	ctxCancel      context.CancelCauseFunc                    // 取消连接并纪录终止原因
 	sendQueue      chan []byte                                // 发送队列
@@ -91,6 +92,11 @@ func (c *Conn[P]) RemoteAddr() net.Addr {
 // Err 返回首个终止原因，尚未终止时返回 nil
 func (c *Conn[P]) Err() error {
 	return context.Cause(c.ctx)
+}
+
+// Statistics 返回当前连接的累计统计快照
+func (c *Conn[P]) Statistics() TrafficSnapshot {
+	return c.statistics.Snapshot()
 }
 
 // Send 编码并发送消息 成功表示消息入队 不代表对端成功接收
@@ -242,6 +248,7 @@ func (c *Conn[P]) writeLoop() {
 				c.closeWithCause(io.ErrShortWrite)
 				return
 			}
+			c.statistics.IncrWrite(uint64(nBytes))
 		}
 	}
 }
@@ -254,11 +261,12 @@ func (c *Conn[P]) readLoop() {
 		if c.Err() != nil {
 			return
 		}
-		packet, err := c.codec.Decode(reader)
+		packet, nBytes, err := c.codec.Decode(reader)
 		if err != nil {
 			c.closeWithCause(err)
 			return
 		}
+		c.statistics.IncrRead(uint64(nBytes))
 		if c.Err() != nil {
 			return
 		}

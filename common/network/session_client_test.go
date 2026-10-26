@@ -38,7 +38,7 @@ func TestSessionClientSuccessAndCallbackCompletion(t *testing.T) {
 	sent := make(chan error, 1)
 	go func() { sent <- conn.Send(context.Background(), "hello") }()
 	_ = peer.SetReadDeadline(time.Now().Add(testTimeout))
-	packet, err := (testCodec{}).Decode(peer)
+	packet, _, err := (testCodec{}).Decode(peer)
 	if err != nil || packet != "hello" {
 		t.Fatalf("读取: %q %v", packet, err)
 	}

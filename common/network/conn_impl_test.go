@@ -44,6 +44,10 @@ func TestConnStreamFrames(t *testing.T) {
 	if !errors.Is(conn.Err(), io.EOF) {
 		t.Fatalf("终止原因: %v", conn.Err())
 	}
+	want := TrafficSnapshot{ReadMessages: 3, ReadBytes: 91}
+	if got := conn.Statistics(); got != want {
+		t.Fatalf("半包及粘包统计: got %+v want %+v", got, want)
+	}
 }
 
 func TestConnTruncatedFrame(t *testing.T) {
@@ -89,7 +93,7 @@ func TestConnSendQueue(t *testing.T) {
 
 type testPanicCodec struct{ testCodec }
 
-func (testPanicCodec) Decode(io.Reader) (string, error) { panic("decode failed") }
+func (testPanicCodec) Decode(io.Reader) (string, int, error) { panic("decode failed") }
 
 type testWriteTransport struct {
 	Transport
@@ -183,7 +187,7 @@ func TestConnHeartbeat(t *testing.T) {
 			if _, err := peer.Write(frame); err != nil {
 				t.Fatal(err)
 			}
-			packet, err := (testCodec{}).Decode(peer)
+			packet, _, err := (testCodec{}).Decode(peer)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -210,10 +214,10 @@ func TestConnHeartbeat(t *testing.T) {
 		conn := testNewConn(t, transport, ConnDependencies[string]{
 			Codec: testCodec{}, Heartbeator: testHeartbeat{},
 		}, ConnConfig{HeartbeatInterval: 10 * time.Millisecond, HeartbeatTimeout: time.Hour})
-		testRunConn(t, conn)
+		done := testRunConn(t, conn)
 		_ = peer.SetReadDeadline(time.Now().Add(testTimeout))
 		for seq := uint64(1); seq <= 3; seq++ {
-			packet, err := (testCodec{}).Decode(peer)
+			packet, _, err := (testCodec{}).Decode(peer)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -221,6 +225,12 @@ func TestConnHeartbeat(t *testing.T) {
 			if packet != want {
 				t.Fatalf("主动 Ping 序号错误: got %q want %q", packet, want)
 			}
+		}
+		_ = conn.Close()
+		testReceive(t, done)
+		want := TrafficSnapshot{WriteMessages: 3, WriteBytes: 21}
+		if got := conn.Statistics(); got != want {
+			t.Fatalf("主动 Ping 统计: got %+v want %+v", got, want)
 		}
 	})
 	t.Run("timeout_with_blocked_writer", func(t *testing.T) {

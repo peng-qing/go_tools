@@ -20,14 +20,15 @@ type testCodec struct{}
 func (testCodec) Encode(packet string) ([]byte, error) {
 	return append([]byte{byte(len(packet))}, []byte(packet)...), nil
 }
-func (testCodec) Decode(reader io.Reader) (string, error) {
+func (testCodec) Decode(reader io.Reader) (string, int, error) {
 	var head [1]byte
-	if _, err := io.ReadFull(reader, head[:]); err != nil {
-		return "", err
+	n, err := io.ReadFull(reader, head[:])
+	if err != nil {
+		return "", n, err
 	}
 	data := make([]byte, int(head[0]))
-	_, err := io.ReadFull(reader, data)
-	return string(data), err
+	size, err := io.ReadFull(reader, data)
+	return string(data), n + size, err
 }
 
 type testReceiver func(context.Context, Connection[string], string)

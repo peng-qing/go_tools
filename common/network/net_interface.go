@@ -11,7 +11,7 @@ type Codec[P any] interface {
 	// Encode 编码业务包为二进制数据
 	Encode(packet P) ([]byte, error)
 	// Decode 从 reader 读取并解码一个完整帧
-	Decode(reader io.Reader) (packet P, err error)
+	Decode(reader io.Reader) (packet P, n int, err error)
 }
 
 // Transport 对底层 Socket 的兼容封装，是上层唯一依赖的物理 I/O 接口。
@@ -62,6 +62,8 @@ type Connection[P any] interface {
 	Close() error
 	// Err 返回首个终止原因，尚未终止时为 nil。
 	Err() error
+	// Statistics 返回当前连接的累计统计快照
+	Statistics() TrafficSnapshot
 }
 
 // Receiver 网络消息到业务的入站边界
