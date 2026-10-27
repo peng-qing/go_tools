@@ -7,6 +7,7 @@
 | [container](container/README.md) | Queue、Set、SortedMap、LRU、分片 LRU、2Q 缓存 |
 | [encode_utils](encode_utils/README.md) | UTF-8、GBK、GB18030、HZ-GB2312 编解码 |
 | [http_utils](http_utils/README.md) | HTTP Session、请求参数、文件上传、Hook、响应解析 |
+| [logger](logger/README.md) | 文件日志写入、按大小轮转、备份清理和 gzip 压缩 |
 | [mongo_driver](mongo_driver/README.md) | MongoDB 节点管理、泛型集合、查询与更新构建器 |
 | [network](network/README.md) | TCP/KCP/WebSocket、Server/Client、依赖工厂、心跳和流量统计 |
 | [options](options/README.md) | 泛型函数式选项接口 |

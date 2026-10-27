@@ -1,6 +1,6 @@
 # go_tools
 
-`go_tools` 是一个面向 Go 服务端开发的通用工具库，提供容器、HTTP、MongoDB、网络通信、对象池、性能分析和定时器等常用能力。
+`go_tools` 是一个面向 Go 服务端开发的通用工具库，提供容器、HTTP、日志轮转、MongoDB、网络通信、对象池、性能分析和定时器等常用能力。
 
 ## 环境要求
 
@@ -23,6 +23,7 @@ go get github.com/peng-qing/go_tools
 | [container](common/container/README.md) | 泛型容器与缓存 |
 | [encode_utils](common/encode_utils/README.md) | 文本编码与解码 |
 | [http_utils](common/http_utils/README.md) | HTTP 请求与响应 |
+| [logger](common/logger/README.md) | 按大小分割、备份清理和 gzip 压缩 |
 | [mongo_driver](common/mongo_driver/README.md) | MongoDB 连接与 CRUD |
 | [network](common/network/README.md) | TCP/KCP/WebSocket、泛型连接、依赖工厂、心跳与流量统计 |
 | [options](common/options/README.md) | 泛型函数式选项 |
